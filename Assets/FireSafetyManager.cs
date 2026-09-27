@@ -77,7 +77,7 @@ public class FireSafetyManager : MonoBehaviour
         // leaving them out of view. Start() runs after every object's Awake,
         // giving the camera time to be ready.
         EnsurePhysicsRaycaster();
-        SetCameraSolidBackground();
+        ConfigureARCameraBackground();
         BuildRoomCircuitBoardAndDoors();
         BuildTallFlamesAndHeavySmoke();
         Build3DExtinguisher();
@@ -315,9 +315,9 @@ public class FireSafetyManager : MonoBehaviour
 
     private void ApplyFireHealth(float norm)
     {
-        boardFlamesEmission.rateOverTime = 170f * norm;
-        floorFlamesEmission.rateOverTime = 220f * norm;
-        electricalCoreEmission.rateOverTime = 120f * norm;
+        boardFlamesEmission.rateOverTime = 140f * norm;
+        floorFlamesEmission.rateOverTime = 180f * norm;
+        electricalCoreEmission.rateOverTime = 100f * norm;
         heavyFloorSmokeEmission.rateOverTime = 95f * (norm > 0.01f ? (0.35f + norm * 0.65f) : 0f);
         boardSmokeEmission.rateOverTime = 55f * (norm > 0.01f ? (0.3f + norm * 0.7f) : 0f);
         wallSparksEmission.rateOverTime = 55f * (norm * norm);
@@ -682,10 +682,10 @@ public class FireSafetyManager : MonoBehaviour
         var ffMain = floorFlamesPS.main;
         ffMain.startLifetime = new ParticleSystem.MinMaxCurve(1.1f, 1.9f); // Longer-lived so flames climb much higher
         ffMain.startSpeed = new ParticleSystem.MinMaxCurve(3.4f, 6.2f); // Huge upward velocity for TALL flames
-        ffMain.startSize = new ParticleSystem.MinMaxCurve(0.9f, 1.7f); // Wide, huge flame tongues
+        ffMain.startSize = new ParticleSystem.MinMaxCurve(0.8f, 1.45f); // Slightly reduced flame tongues for mobile clarity
         ffMain.simulationSpace = ParticleSystemSimulationSpace.World;
         floorFlamesEmission = floorFlamesPS.emission;
-        floorFlamesEmission.rateOverTime = 220f; // Dense, roaring blaze
+        floorFlamesEmission.rateOverTime = 180f; // Reduced density for mobile clarity
 
         var ffShape = floorFlamesPS.shape;
         ffShape.shapeType = ParticleSystemShapeType.Circle;
@@ -717,10 +717,10 @@ public class FireSafetyManager : MonoBehaviour
         var bfMain = boardFlamesPS.main;
         bfMain.startLifetime = new ParticleSystem.MinMaxCurve(0.9f, 1.6f);
         bfMain.startSpeed = new ParticleSystem.MinMaxCurve(2.6f, 4.6f);
-        bfMain.startSize = new ParticleSystem.MinMaxCurve(0.6f, 1.15f);
+        bfMain.startSize = new ParticleSystem.MinMaxCurve(0.52f, 0.95f);
         bfMain.simulationSpace = ParticleSystemSimulationSpace.World;
         boardFlamesEmission = boardFlamesPS.emission;
-        boardFlamesEmission.rateOverTime = 170f;
+        boardFlamesEmission.rateOverTime = 140f;
 
         var bfShape = boardFlamesPS.shape;
         bfShape.shapeType = ParticleSystemShapeType.Cone;
@@ -745,10 +745,10 @@ public class FireSafetyManager : MonoBehaviour
         var ecMain = electricalCorePS.main;
         ecMain.startLifetime = new ParticleSystem.MinMaxCurve(0.45f, 0.85f);
         ecMain.startSpeed = new ParticleSystem.MinMaxCurve(1.0f, 2.0f);
-        ecMain.startSize = new ParticleSystem.MinMaxCurve(0.4f, 0.75f);
+        ecMain.startSize = new ParticleSystem.MinMaxCurve(0.35f, 0.62f);
         ecMain.simulationSpace = ParticleSystemSimulationSpace.World;
         electricalCoreEmission = electricalCorePS.emission;
-        electricalCoreEmission.rateOverTime = 120f;
+        electricalCoreEmission.rateOverTime = 100f;
 
         var ecShape = electricalCorePS.shape;
         ecShape.shapeType = ParticleSystemShapeType.Cone;
@@ -923,13 +923,13 @@ public class FireSafetyManager : MonoBehaviour
         bannerRT.anchorMin = new Vector2(0f, 1f);
         bannerRT.anchorMax = new Vector2(1f, 1f);
         bannerRT.pivot = new Vector2(0.5f, 1f);
-        bannerRT.sizeDelta = new Vector2(0, 70f);
+        bannerRT.sizeDelta = new Vector2(0, 90f);
 
         GameObject bannerTextObj = new GameObject("BannerText");
         bannerTextObj.transform.SetParent(bannerObj.transform, false);
         bannerText = bannerTextObj.AddComponent<Text>();
         bannerText.font = defaultFont;
-        bannerText.fontSize = 26;
+        bannerText.fontSize = 30;
         bannerText.fontStyle = FontStyle.Bold;
         bannerText.alignment = TextAnchor.MiddleCenter;
         bannerText.color = Color.white;
@@ -946,14 +946,14 @@ public class FireSafetyManager : MonoBehaviour
         RectTransform qcRT = questionCard.GetComponent<RectTransform>();
         qcRT.anchorMin = new Vector2(0.5f, 0.5f);
         qcRT.anchorMax = new Vector2(0.5f, 0.5f);
-        qcRT.sizeDelta = new Vector2(620f, 520f); // Extra height to fit the larger, more legible fonts
+        qcRT.sizeDelta = new Vector2(700f, 700f); // Extra height to fit the larger, more legible fonts
 
         // Title
         GameObject titleObj = new GameObject("QTitle");
         titleObj.transform.SetParent(questionCard.transform, false);
         questionTitleText = titleObj.AddComponent<Text>();
         questionTitleText.font = defaultFont;
-        questionTitleText.fontSize = 26;
+        questionTitleText.fontSize = 32;
         questionTitleText.fontStyle = FontStyle.Bold;
         questionTitleText.color = new Color(1f, 0.8f, 0.2f);
         questionTitleText.alignment = TextAnchor.MiddleCenter;
@@ -964,14 +964,14 @@ public class FireSafetyManager : MonoBehaviour
         titleRT.anchorMax = new Vector2(1, 1);
         titleRT.pivot = new Vector2(0.5f, 1f);
         titleRT.anchoredPosition = new Vector2(0, -20f);
-        titleRT.sizeDelta = new Vector2(-40f, 46f);
+        titleRT.sizeDelta = new Vector2(-40f, 58f);
 
         // Description
         GameObject descObj = new GameObject("QDesc");
         descObj.transform.SetParent(questionCard.transform, false);
         questionDescText = descObj.AddComponent<Text>();
         questionDescText.font = defaultFont;
-        questionDescText.fontSize = 19;
+        questionDescText.fontSize = 23;
         questionDescText.color = new Color(0.9f, 0.9f, 0.9f);
         questionDescText.alignment = TextAnchor.UpperCenter;
         questionDescText.horizontalOverflow = HorizontalWrapMode.Wrap;
@@ -981,11 +981,11 @@ public class FireSafetyManager : MonoBehaviour
         descRT.anchorMax = new Vector2(1, 1);
         descRT.pivot = new Vector2(0.5f, 1f);
         descRT.anchoredPosition = new Vector2(0, -74f);
-        descRT.sizeDelta = new Vector2(-50f, 130f); // Enough height for 4-5 wrapped lines at the larger font size
+        descRT.sizeDelta = new Vector2(-50f, 145f); // Enough height for 4-5 wrapped lines at the larger font size
 
         // 3 Option Buttons
-        float buttonYStart = -220f; // Clear gap below the (taller) description block
-        float buttonSpacing = 80f;  // Extra room between buttons so they never touch
+        float buttonYStart = -190f; // Clear gap below the (taller) description block
+        float buttonSpacing = 145f;  // Large vertical gaps for reliable mobile taps
         for (int i = 0; i < 3; i++)
         {
             GameObject btnObj = new GameObject("OptionBtn_" + i);
@@ -999,14 +999,14 @@ public class FireSafetyManager : MonoBehaviour
             btnRT.anchorMin = new Vector2(0.5f, 1f);
             btnRT.anchorMax = new Vector2(0.5f, 1f);
             btnRT.pivot = new Vector2(0.5f, 1f);
-            btnRT.sizeDelta = new Vector2(560f, 62f);
+            btnRT.sizeDelta = new Vector2(620f, 125f);
             btnRT.anchoredPosition = new Vector2(0, buttonYStart - i * buttonSpacing);
 
             GameObject btnTextObj = new GameObject("BtnText");
             btnTextObj.transform.SetParent(btnObj.transform, false);
             Text btnText = btnTextObj.AddComponent<Text>();
             btnText.font = defaultFont;
-            btnText.fontSize = 20;
+            btnText.fontSize = 27;
             btnText.fontStyle = FontStyle.Bold;
             btnText.color = Color.white;
             btnText.alignment = TextAnchor.MiddleCenter;
@@ -1055,7 +1055,7 @@ public class FireSafetyManager : MonoBehaviour
         hudTextObj.transform.SetParent(minigameHud.transform, false);
         Text hudText = hudTextObj.AddComponent<Text>();
         hudText.font = defaultFont;
-        hudText.fontSize = 19;
+        hudText.fontSize = 23;
         hudText.fontStyle = FontStyle.Bold;
         hudText.color = Color.white;
         hudText.alignment = TextAnchor.MiddleCenter;
@@ -1080,7 +1080,7 @@ public class FireSafetyManager : MonoBehaviour
         sTitleObj.transform.SetParent(successCard.transform, false);
         Text sTitle = sTitleObj.AddComponent<Text>();
         sTitle.font = defaultFont;
-        sTitle.fontSize = 30;
+        sTitle.fontSize = 34;
         sTitle.fontStyle = FontStyle.Bold;
         sTitle.color = new Color(0.3f, 1f, 0.45f);
         sTitle.alignment = TextAnchor.MiddleCenter;
@@ -1093,7 +1093,7 @@ public class FireSafetyManager : MonoBehaviour
         sDescObj.transform.SetParent(successCard.transform, false);
         Text sDesc = sDescObj.AddComponent<Text>();
         sDesc.font = defaultFont;
-        sDesc.fontSize = 20;
+        sDesc.fontSize = 23;
         sDesc.color = Color.white;
         sDesc.alignment = TextAnchor.MiddleCenter;
         sDesc.text = "Training successful!\nYou equipped proper PPE, deployed CO2, aimed at the fuel base, and identified the safe, undamaged emergency exit to escape!";
@@ -1116,7 +1116,7 @@ public class FireSafetyManager : MonoBehaviour
         rTextObj.transform.SetParent(rBtnObj.transform, false);
         Text rText = rTextObj.AddComponent<Text>();
         rText.font = defaultFont;
-        rText.fontSize = 21;
+        rText.fontSize = 24;
         rText.fontStyle = FontStyle.Bold;
         rText.color = Color.white;
         rText.alignment = TextAnchor.MiddleCenter;
@@ -1204,17 +1204,26 @@ public class FireSafetyManager : MonoBehaviour
         }
     }
 
-    // Replaces the default skybox (which renders as a yellow/orange
-    // horizon-and-sun gradient) with a flat dark background that suits
-    // the fire/smoke scene. Skip this if the project uses AR Foundation
-    // camera passthrough, since Solid Color would hide the live feed too.
-    private void SetCameraSolidBackground()
+    // Keep the live phone camera visible when running with AR Foundation.
+    // A Solid Color camera is only a fallback for non-AR testing; on a real
+    // AR device ARCameraBackground must remain enabled.
+    private void ConfigureARCameraBackground()
     {
-        if (Camera.main != null)
+        Camera cam = GetActiveCamera();
+        if (cam == null) return;
+
+        var arBg = cam.GetComponent<UnityEngine.XR.ARFoundation.ARCameraBackground>();
+        if (arBg != null)
         {
-            Camera.main.clearFlags = CameraClearFlags.SolidColor;
-            Camera.main.backgroundColor = new Color(0.02f, 0.02f, 0.03f);
+            arBg.enabled = true;
+            cam.clearFlags = CameraClearFlags.SolidColor;
+            cam.backgroundColor = Color.black;
+            return;
         }
+
+        Debug.LogWarning("ARCameraBackground is missing on the AR camera. Add ARCameraManager and ARCameraBackground to the camera, then make sure the camera is tagged MainCamera.");
+        cam.clearFlags = CameraClearFlags.SolidColor;
+        cam.backgroundColor = new Color(0.02f, 0.02f, 0.03f);
     }
 
     private Font GetUniversalFont()
