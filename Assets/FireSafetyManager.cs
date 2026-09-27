@@ -43,6 +43,7 @@ public class FireSafetyManager : MonoBehaviour
     private Light sparkArcLight;
     private AudioSource alarmSource;
     private Camera activeCam; // Cached camera used to place the hand-held extinguisher
+    private Draggable3DExtinguisher extinguisherDraggable;
 
     // Auto-Generated UI
     private Canvas uiCanvas;
@@ -65,6 +66,16 @@ public class FireSafetyManager : MonoBehaviour
     void Awake()
     {
         EnsureEventSystem();
+    }
+
+    void Start()
+    {
+        // Building the room/doors/fire here (rather than Awake) matters on
+        // phone/AR builds: Awake can run before the device camera is fully
+        // ready or tagged "MainCamera", which was silently placing the whole
+        // room (including both exit doors) relative to a missing camera and
+        // leaving them out of view. Start() runs after every object's Awake,
+        // giving the camera time to be ready.
         EnsurePhysicsRaycaster();
         SetCameraSolidBackground();
         BuildRoomCircuitBoardAndDoors();
@@ -72,10 +83,6 @@ public class FireSafetyManager : MonoBehaviour
         Build3DExtinguisher();
         BuildProceduralUI();
         BuildAlarmAudio();
-    }
-
-    void Start()
-    {
         StartPPEQuestion();
     }
 
@@ -110,12 +117,14 @@ public class FireSafetyManager : MonoBehaviour
         }
 
         // Keep the extinguisher glued in front of the camera every frame while it's
-        // in play. Positioning it only once (at the moment the minigame starts) is
-        // what made it go missing on phones: on many devices/AR setups Camera.main
-        // isn't guaranteed to be settled or on the same GameObject a frame later, so
-        // a one-shot placement can land the extinguisher off-frame with nothing
-        // afterward to correct it.
-        if (extinguisherRoot != null && extinguisherRoot.activeSelf)
+        // in play - but only until the player grabs it. Positioning it only once
+        // (at the moment the minigame starts) is what made it go missing on
+        // phones: on many devices/AR setups Camera.main isn't guaranteed to be
+        // settled a frame later, so a one-shot placement can land it off-frame
+        // with nothing afterward to correct it. Once HasBeenGrabbed is true,
+        // this must stop, or it fights the player's own drag input every frame.
+        if (extinguisherRoot != null && extinguisherRoot.activeSelf
+            && (extinguisherDraggable == null || !extinguisherDraggable.HasBeenGrabbed))
         {
             Camera cam = GetActiveCamera();
             if (cam != null)
@@ -124,7 +133,6 @@ public class FireSafetyManager : MonoBehaviour
                     + cam.transform.forward * 0.6f
                     - cam.transform.up * 0.18f
                     + cam.transform.right * 0.12f;
-                extinguisherRoot.transform.rotation = cam.transform.rotation;
             }
         }
     }
@@ -233,6 +241,7 @@ public class FireSafetyManager : MonoBehaviour
         if (extinguisherRoot != null)
         {
             extinguisherRoot.SetActive(true);
+            if (extinguisherDraggable != null) extinguisherDraggable.ResetGrabState();
             Camera cam = GetActiveCamera();
             if (cam != null)
             {
@@ -346,10 +355,11 @@ public class FireSafetyManager : MonoBehaviour
         Material trimMat = CreateSolidMaterial(solidShader, new Color(0.22f, 0.22f, 0.24f));
 
         Vector3 center = Vector3.forward * 1.5f;
-        if (Camera.main != null)
+        Camera roomCam = GetActiveCamera();
+        if (roomCam != null)
         {
-            Vector3 camPos = Camera.main.transform.position;
-            Vector3 fwdFlat = Vector3.ProjectOnPlane(Camera.main.transform.forward, Vector3.up).normalized;
+            Vector3 camPos = roomCam.transform.position;
+            Vector3 fwdFlat = Vector3.ProjectOnPlane(roomCam.transform.forward, Vector3.up).normalized;
             center = camPos + fwdFlat * 1.6f;
         }
 
@@ -853,7 +863,7 @@ public class FireSafetyManager : MonoBehaviour
 
         var col = extinguisherRoot.AddComponent<BoxCollider>();
         col.size = new Vector3(0.32f, 0.65f, 0.32f);
-        extinguisherRoot.AddComponent<Draggable3DExtinguisher>();
+        extinguisherDraggable = extinguisherRoot.AddComponent<Draggable3DExtinguisher>();
 
         Material pMat = new Material(Shader.Find("Sprites/Default")) { mainTexture = GenerateSoftCircleTexture(64) };
         co2SprayPS = CreateParticleChild("CO2_GasSpray", new Vector3(0.08f, 0.12f, 0.18f), pMat, extinguisherRoot.transform);
@@ -899,7 +909,7 @@ public class FireSafetyManager : MonoBehaviour
         // pushing the description text down into the answer buttons.
         scaler.referenceResolution = new Vector2(1080f, 1920f);
         scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
-        scaler.matchWidthOrHeight = 0.5f;
+        scaler.matchWidthOrHeight = 1f; // Match height only - keeps text a consistent, readable size across different phone aspect ratios
         canvasObj.AddComponent<GraphicRaycaster>();
 
         Font defaultFont = GetUniversalFont();
@@ -919,7 +929,7 @@ public class FireSafetyManager : MonoBehaviour
         bannerTextObj.transform.SetParent(bannerObj.transform, false);
         bannerText = bannerTextObj.AddComponent<Text>();
         bannerText.font = defaultFont;
-        bannerText.fontSize = 20;
+        bannerText.fontSize = 26;
         bannerText.fontStyle = FontStyle.Bold;
         bannerText.alignment = TextAnchor.MiddleCenter;
         bannerText.color = Color.white;
@@ -936,14 +946,14 @@ public class FireSafetyManager : MonoBehaviour
         RectTransform qcRT = questionCard.GetComponent<RectTransform>();
         qcRT.anchorMin = new Vector2(0.5f, 0.5f);
         qcRT.anchorMax = new Vector2(0.5f, 0.5f);
-        qcRT.sizeDelta = new Vector2(620f, 460f); // Taller to give every section its own clear space
+        qcRT.sizeDelta = new Vector2(620f, 520f); // Extra height to fit the larger, more legible fonts
 
         // Title
         GameObject titleObj = new GameObject("QTitle");
         titleObj.transform.SetParent(questionCard.transform, false);
         questionTitleText = titleObj.AddComponent<Text>();
         questionTitleText.font = defaultFont;
-        questionTitleText.fontSize = 20;
+        questionTitleText.fontSize = 26;
         questionTitleText.fontStyle = FontStyle.Bold;
         questionTitleText.color = new Color(1f, 0.8f, 0.2f);
         questionTitleText.alignment = TextAnchor.MiddleCenter;
@@ -954,14 +964,14 @@ public class FireSafetyManager : MonoBehaviour
         titleRT.anchorMax = new Vector2(1, 1);
         titleRT.pivot = new Vector2(0.5f, 1f);
         titleRT.anchoredPosition = new Vector2(0, -20f);
-        titleRT.sizeDelta = new Vector2(-40f, 40f);
+        titleRT.sizeDelta = new Vector2(-40f, 46f);
 
         // Description
         GameObject descObj = new GameObject("QDesc");
         descObj.transform.SetParent(questionCard.transform, false);
         questionDescText = descObj.AddComponent<Text>();
         questionDescText.font = defaultFont;
-        questionDescText.fontSize = 14;
+        questionDescText.fontSize = 19;
         questionDescText.color = new Color(0.9f, 0.9f, 0.9f);
         questionDescText.alignment = TextAnchor.UpperCenter;
         questionDescText.horizontalOverflow = HorizontalWrapMode.Wrap;
@@ -970,12 +980,12 @@ public class FireSafetyManager : MonoBehaviour
         descRT.anchorMin = new Vector2(0, 1);
         descRT.anchorMax = new Vector2(1, 1);
         descRT.pivot = new Vector2(0.5f, 1f);
-        descRT.anchoredPosition = new Vector2(0, -70f);
-        descRT.sizeDelta = new Vector2(-50f, 100f); // Enough height for 4-5 wrapped lines on a narrow phone
+        descRT.anchoredPosition = new Vector2(0, -74f);
+        descRT.sizeDelta = new Vector2(-50f, 130f); // Enough height for 4-5 wrapped lines at the larger font size
 
         // 3 Option Buttons
-        float buttonYStart = -195f; // Clear gap below the (taller) description block
-        float buttonSpacing = 74f;  // Extra room between buttons so they never touch
+        float buttonYStart = -220f; // Clear gap below the (taller) description block
+        float buttonSpacing = 80f;  // Extra room between buttons so they never touch
         for (int i = 0; i < 3; i++)
         {
             GameObject btnObj = new GameObject("OptionBtn_" + i);
@@ -989,14 +999,14 @@ public class FireSafetyManager : MonoBehaviour
             btnRT.anchorMin = new Vector2(0.5f, 1f);
             btnRT.anchorMax = new Vector2(0.5f, 1f);
             btnRT.pivot = new Vector2(0.5f, 1f);
-            btnRT.sizeDelta = new Vector2(560f, 55f);
+            btnRT.sizeDelta = new Vector2(560f, 62f);
             btnRT.anchoredPosition = new Vector2(0, buttonYStart - i * buttonSpacing);
 
             GameObject btnTextObj = new GameObject("BtnText");
             btnTextObj.transform.SetParent(btnObj.transform, false);
             Text btnText = btnTextObj.AddComponent<Text>();
             btnText.font = defaultFont;
-            btnText.fontSize = 15;
+            btnText.fontSize = 20;
             btnText.fontStyle = FontStyle.Bold;
             btnText.color = Color.white;
             btnText.alignment = TextAnchor.MiddleCenter;
@@ -1045,7 +1055,7 @@ public class FireSafetyManager : MonoBehaviour
         hudTextObj.transform.SetParent(minigameHud.transform, false);
         Text hudText = hudTextObj.AddComponent<Text>();
         hudText.font = defaultFont;
-        hudText.fontSize = 14;
+        hudText.fontSize = 19;
         hudText.fontStyle = FontStyle.Bold;
         hudText.color = Color.white;
         hudText.alignment = TextAnchor.MiddleCenter;
@@ -1070,7 +1080,7 @@ public class FireSafetyManager : MonoBehaviour
         sTitleObj.transform.SetParent(successCard.transform, false);
         Text sTitle = sTitleObj.AddComponent<Text>();
         sTitle.font = defaultFont;
-        sTitle.fontSize = 24;
+        sTitle.fontSize = 30;
         sTitle.fontStyle = FontStyle.Bold;
         sTitle.color = new Color(0.3f, 1f, 0.45f);
         sTitle.alignment = TextAnchor.MiddleCenter;
@@ -1083,7 +1093,7 @@ public class FireSafetyManager : MonoBehaviour
         sDescObj.transform.SetParent(successCard.transform, false);
         Text sDesc = sDescObj.AddComponent<Text>();
         sDesc.font = defaultFont;
-        sDesc.fontSize = 15;
+        sDesc.fontSize = 20;
         sDesc.color = Color.white;
         sDesc.alignment = TextAnchor.MiddleCenter;
         sDesc.text = "Training successful!\nYou equipped proper PPE, deployed CO2, aimed at the fuel base, and identified the safe, undamaged emergency exit to escape!";
@@ -1106,7 +1116,7 @@ public class FireSafetyManager : MonoBehaviour
         rTextObj.transform.SetParent(rBtnObj.transform, false);
         Text rText = rTextObj.AddComponent<Text>();
         rText.font = defaultFont;
-        rText.fontSize = 16;
+        rText.fontSize = 21;
         rText.fontStyle = FontStyle.Bold;
         rText.color = Color.white;
         rText.alignment = TextAnchor.MiddleCenter;
@@ -1404,13 +1414,24 @@ public class DoorClickHandler : MonoBehaviour, IPointerClickHandler
 // =========================================================================
 // DRAGGABLE EXTINGUISHER
 // =========================================================================
-public class Draggable3DExtinguisher : MonoBehaviour, IDragHandler
+public class Draggable3DExtinguisher : MonoBehaviour, IDragHandler, IBeginDragHandler
 {
     private Camera mainCam;
+
+    // Once the player grabs the extinguisher, the manager's per-frame
+    // camera-follow must stop overriding their drag input - otherwise the
+    // extinguisher snaps back to the camera every frame and can never
+    // actually be dragged.
+    public bool HasBeenGrabbed { get; private set; }
 
     void Start()
     {
         mainCam = Camera.main;
+    }
+
+    public void OnBeginDrag(PointerEventData eventData)
+    {
+        HasBeenGrabbed = true;
     }
 
     public void OnDrag(PointerEventData eventData)
@@ -1421,5 +1442,12 @@ public class Draggable3DExtinguisher : MonoBehaviour, IDragHandler
         float zDepth = mainCam.WorldToScreenPoint(transform.position).z;
         Vector3 screenPos = new Vector3(eventData.position.x, eventData.position.y, zDepth);
         transform.position = mainCam.ScreenToWorldPoint(screenPos);
+    }
+
+    // Called when a new attempt starts so the extinguisher docks back to
+    // the camera-follow position at the start of each minigame.
+    public void ResetGrabState()
+    {
+        HasBeenGrabbed = false;
     }
 }
