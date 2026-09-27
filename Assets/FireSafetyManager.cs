@@ -1,40 +1,46 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
 
 public class FireSafetyManager : MonoBehaviour
 {
-    private enum SimState { Question_PPE, Question_Extinguisher, Question_Aim, Minigame_Extinguishing, Success }
+    private enum SimState { Question_PPE, Question_Extinguisher, Question_Aim, Minigame_Extinguishing, Evacuation_Exit, Success }
     private SimState currentState;
 
     // 3D Environment Roots
     private GameObject roomRoot;
-    private GameObject switchboardRoot;
+    private GameObject circuitBoardRoot;
     private GameObject fireRoot;
     private GameObject extinguisherRoot;
 
+    // 3D Interactive Exit Doors
+    private GameObject damagedDoorObj;
+    private GameObject safeDoorObj;
+
     // Particle Systems
-    private ParticleSystem mainFlamesPS;
-    private ParticleSystem coreFlamesPS;
-    private ParticleSystem coalsPS;
-    private ParticleSystem embersPS;
-    private ParticleSystem smokePS;
-    private ParticleSystem sparksPS;
+    private ParticleSystem boardFlamesPS;
+    private ParticleSystem floorFlamesPS;
+    private ParticleSystem electricalCorePS;
+    private ParticleSystem heavyFloorSmokePS;
+    private ParticleSystem boardSmokePS;
+    private ParticleSystem wallSparksPS;
+    private ParticleSystem moltenDripsPS;
+    private ParticleSystem doorSmokeLeakPS;
     private ParticleSystem co2SprayPS;
 
-    // Cached Emission Modules
-    private ParticleSystem.EmissionModule mainFlamesEmission;
-    private ParticleSystem.EmissionModule coreFlamesEmission;
-    private ParticleSystem.EmissionModule coalsEmission;
-    private ParticleSystem.EmissionModule embersEmission;
-    private ParticleSystem.EmissionModule smokeEmission;
-    private ParticleSystem.EmissionModule sparksEmission;
+    // Cached Emission Modules (prevents CS1612 compiler error)
+    private ParticleSystem.EmissionModule boardFlamesEmission;
+    private ParticleSystem.EmissionModule floorFlamesEmission;
+    private ParticleSystem.EmissionModule electricalCoreEmission;
+    private ParticleSystem.EmissionModule heavyFloorSmokeEmission;
+    private ParticleSystem.EmissionModule boardSmokeEmission;
+    private ParticleSystem.EmissionModule wallSparksEmission;
+    private ParticleSystem.EmissionModule moltenDripsEmission;
+    private ParticleSystem.EmissionModule doorSmokeLeakEmission;
     private ParticleSystem.EmissionModule co2SprayEmission;
 
     private Light fireLight;
-    private Light sparkLight;
+    private Light sparkArcLight;
     private AudioSource alarmSource;
 
     // Auto-Generated UI
@@ -59,8 +65,8 @@ public class FireSafetyManager : MonoBehaviour
     {
         EnsureEventSystem();
         EnsurePhysicsRaycaster();
-        Build3DRoomAndSwitchboard();
-        BuildShapedGroundFire();
+        BuildRoomCircuitBoardAndDoors();
+        BuildTallFlamesAndHeavySmoke();
         Build3DExtinguisher();
         BuildProceduralUI();
         BuildAlarmAudio();
@@ -73,20 +79,20 @@ public class FireSafetyManager : MonoBehaviour
 
     void Update()
     {
-        // Dynamic flame flicker
+        // Dynamic violent flame flicker
         if (fireLight != null && fireLight.enabled)
         {
-            float noise = Mathf.PerlinNoise(Time.time * 8.5f, 0f);
-            fireLight.intensity = 2.8f * (0.8f + noise * 0.45f);
+            float noise = Mathf.PerlinNoise(Time.time * 10f, 0f);
+            fireLight.intensity = 6.0f * (0.75f + noise * 0.5f);
         }
 
-        // Electric arc flashes at cut wires
-        if (sparkLight != null && sparkLight.enabled)
+        // Crackling electric arc flashes at severed copper wires
+        if (sparkArcLight != null && sparkArcLight.enabled)
         {
-            sparkLight.intensity = (Random.value > 0.8f) ? Random.Range(2.0f, 4.0f) : 0f;
+            sparkArcLight.intensity = (Random.value > 0.75f) ? Random.Range(2.5f, 5.0f) : 0f;
         }
 
-        // Extinguish progress
+        // Extinguishing progress
         if (currentState == SimState.Minigame_Extinguishing && isExtinguishing)
         {
             fireHealth -= extinguishRate * Time.deltaTime;
@@ -97,13 +103,13 @@ public class FireSafetyManager : MonoBehaviour
 
             if (fireHealth <= 0f)
             {
-                CompleteSimulation();
+                StartEvacuationStage();
             }
         }
     }
 
     // =========================================================================
-    // 1. QUESTION FLOW
+    // 1. TRAINING QUESTION FLOW & EVACUATION LOGIC
     // =========================================================================
     private void StartPPEQuestion()
     {
@@ -117,63 +123,63 @@ public class FireSafetyManager : MonoBehaviour
         if (minigameHud != null) minigameHud.SetActive(false);
         if (questionCard != null) questionCard.SetActive(true);
 
-        SetBanner("ELECTRICAL FIRE DETECTED!", new Color(0.85f, 0.2f, 0.2f));
+        SetBanner("ELECTRICAL SHORT-CIRCUIT FIRE DETECTED!", new Color(0.9f, 0.15f, 0.15f));
         questionTitleText.text = "Step 1: Select Appropriate PPE";
-        questionDescText.text = "A live electrical short-circuit has caused a fire. What gear must you equip before approaching?";
+        questionDescText.text = "Broken cables in the distribution board have ignited. What PPE must you equip before approaching?";
 
         SetOption(0, "Class 0 Insulated Rubber Gloves & Arc Flash Face Shield", () => {
-            SetBanner("CORRECT: Insulated gear protects against lethal shock & arc flashes.", new Color(0.15f, 0.65f, 0.25f));
+            SetBanner("CORRECT: Insulated gloves & visor protect against high voltage & arc blast.", new Color(0.15f, 0.65f, 0.25f));
             Invoke(nameof(StartExtinguisherQuestion), 1.4f);
         });
 
         SetOption(1, "Standard Cotton Clothes & Leather Work Gloves", () => {
-            SetBanner("INCORRECT: Cotton & standard gloves conduct electricity and can catch fire!", new Color(0.8f, 0.2f, 0.2f));
+            SetBanner("DANGEROUS: Cotton ignites easily and leather provides zero electrical insulation!", new Color(0.8f, 0.2f, 0.2f));
         });
 
-        SetOption(2, "No Gear - Rush in immediately with a water bucket", () => {
-            SetBanner("FATAL MISTAKE: Never approach live electrical fires without insulation!", new Color(0.85f, 0.1f, 0.1f));
+        SetOption(2, "No Gear - Run directly toward the fire with a bucket", () => {
+            SetBanner("FATAL MISTAKE: Approaching live high-voltage fire without PPE leads to electrocution!", new Color(0.85f, 0.1f, 0.1f));
         });
     }
 
     private void StartExtinguisherQuestion()
     {
         currentState = SimState.Question_Extinguisher;
-        SetBanner("SELECT EXTINGUISHING AGENT", new Color(0.9f, 0.55f, 0.1f));
-        questionTitleText.text = "Step 2: Choose the Extinguisher";
+        SetBanner("STEP 2: SELECT EXTINGUISHER TYPE", new Color(0.9f, 0.55f, 0.1f));
+        questionTitleText.text = "Step 2: Choose the Correct Extinguisher";
         questionDescText.text = "Which fire extinguisher is certified and safe for energized electrical equipment?";
 
-        SetOption(0, "CO2 (Carbon Dioxide) / Dry Powder Extinguisher", () => {
-            SetBanner("CORRECT: CO2 is non-conductive and starves the fire without shock risks.", new Color(0.15f, 0.65f, 0.25f));
+        SetOption(0, "CO2 (Carbon Dioxide) / Dry Chemical Extinguisher", () => {
+            SetBanner("CORRECT: Non-conductive CO2 gas starves the fire without electrocution risk.", new Color(0.15f, 0.65f, 0.25f));
             Invoke(nameof(StartAimQuestion), 1.4f);
         });
 
         SetOption(1, "Pressurized Water Jet Extinguisher (Class A)", () => {
-            SetBanner("DANGEROUS: Water conducts electricity straight back to the user causing severe shock!", new Color(0.85f, 0.1f, 0.1f));
+            SetBanner("LETHAL ERROR: Water conducts electricity straight back to the operator!", new Color(0.85f, 0.1f, 0.1f));
         });
 
         SetOption(2, "AFFF Foam Spray Extinguisher", () => {
-            SetBanner("INCORRECT: Water-based foam creates an electrocution hazard on live circuits!", new Color(0.8f, 0.2f, 0.2f));
+            SetBanner("INCORRECT: Foam contains water and creates an electrocution hazard on live circuits!", new Color(0.8f, 0.2f, 0.2f));
         });
     }
 
     private void StartAimQuestion()
     {
         currentState = SimState.Question_Aim;
-        SetBanner("EXTINGUISHER TECHNIQUE", new Color(0.9f, 0.55f, 0.1f));
-        questionTitleText.text = "Step 3: Pointing the Nozzle (P.A.S.S.)";
-        questionDescText.text = "According to the P.A.S.S. protocol, where should you direct the extinguisher horn?";
+        SetBanner("STEP 3: EXTINGUISHER AIM TECHNIQUE (P.A.S.S.)", new Color(0.9f, 0.55f, 0.1f));
+        questionTitleText.text = "Step 3: Pointing the Nozzle";
+        questionDescText.text = "According to the P.A.S.S. protocol, where must you direct the extinguisher horn?";
 
         SetOption(0, "Aim at the base of the fire & sweep side-to-side", () => {
-            SetBanner("EXCELLENT: Aiming at the base attacks the fuel source directly!", new Color(0.15f, 0.65f, 0.25f));
+            SetBanner("PERFECT: Aiming at the base smothers the burning fuel source directly!", new Color(0.15f, 0.65f, 0.25f));
             Invoke(nameof(StartMinigame), 1.2f);
         });
 
         SetOption(1, "Aim high directly at the top of the flames", () => {
-            SetBanner("INCORRECT: Aiming high only disperses gas into the air without stopping fuel combustion.", new Color(0.8f, 0.2f, 0.2f));
+            SetBanner("INEFFECTIVE: Gas disperses into the air without smothering the burning fuel.", new Color(0.8f, 0.2f, 0.2f));
         });
 
         SetOption(2, "Aim into the smoke column above the fire", () => {
-            SetBanner("WRONG: Extinguishing smoke does not extinguish the burning fuel beneath.", new Color(0.8f, 0.2f, 0.2f));
+            SetBanner("WRONG: Extinguishing smoke does not put out the burning cables beneath.", new Color(0.8f, 0.2f, 0.2f));
         });
     }
 
@@ -184,34 +190,57 @@ public class FireSafetyManager : MonoBehaviour
         if (questionCard != null) questionCard.SetActive(false);
         if (minigameHud != null) minigameHud.SetActive(true);
 
-        SetBanner("EXTINGUISHING IN PROGRESS: Drag extinguisher over the fire base!", new Color(0.1f, 0.5f, 0.85f));
+        SetBanner("DRAG EXTINGUISHER OVER THE BURNING CABLES TO PUT OUT FIRE!", new Color(0.1f, 0.5f, 0.85f));
 
         if (extinguisherRoot != null)
         {
             extinguisherRoot.SetActive(true);
             if (Camera.main != null)
             {
-                extinguisherRoot.transform.position = Camera.main.transform.position + Camera.main.transform.forward * 0.85f - Camera.main.transform.up * 0.25f;
+                extinguisherRoot.transform.position = Camera.main.transform.position + Camera.main.transform.forward * 0.85f - Camera.main.transform.up * 0.22f;
             }
         }
 
         if (co2SprayPS != null)
         {
-            co2SprayEmission.rateOverTime = 60f;
+            co2SprayEmission.rateOverTime = 70f;
             co2SprayPS.Play();
+        }
+    }
+
+    // NEW: Evacuation Stage
+    private void StartEvacuationStage()
+    {
+        currentState = SimState.Evacuation_Exit;
+        isExtinguishing = false;
+
+        if (co2SprayPS != null) co2SprayEmission.rateOverTime = 0f;
+        if (extinguisherRoot != null) extinguisherRoot.SetActive(false);
+        if (minigameHud != null) minigameHud.SetActive(false);
+
+        SetBanner("FIRE EXTINGUISHED! HEAVY TOXIC SMOKE REMAINS: Click on the safe, undamaged exit door!", new Color(0.95f, 0.6f, 0.1f));
+    }
+
+    // Called when a door is clicked
+    public void OnDoorClicked(bool isSafeDoor)
+    {
+        if (currentState != SimState.Evacuation_Exit) return;
+
+        if (isSafeDoor)
+        {
+            SetBanner("SAFE EVACUATION: Exit opened! You evacuated the building safely.", new Color(0.12f, 0.7f, 0.3f));
+            Invoke(nameof(CompleteSimulation), 1.2f);
+        }
+        else
+        {
+            SetBanner("DANGER! This door is hot and blocked by fire! Choose the undamaged exit!", new Color(0.9f, 0.15f, 0.15f));
         }
     }
 
     private void CompleteSimulation()
     {
         currentState = SimState.Success;
-        isExtinguishing = false;
-
-        if (co2SprayPS != null) co2SprayEmission.rateOverTime = 0f;
-        if (minigameHud != null) minigameHud.SetActive(false);
         if (successCard != null) successCard.SetActive(true);
-
-        SetBanner("FIRE SAFELY EXTINGUISHED! ROOM SECURED.", new Color(0.12f, 0.7f, 0.3f));
     }
 
     public void RestartSimulation()
@@ -234,43 +263,44 @@ public class FireSafetyManager : MonoBehaviour
 
     private void ApplyFireHealth(float norm)
     {
-        mainFlamesEmission.rateOverTime = 85f * norm;
-        coreFlamesEmission.rateOverTime = 55f * norm;
-        coalsEmission.rateOverTime = 35f * norm;
-        embersEmission.rateOverTime = 40f * (norm * norm);
-        smokeEmission.rateOverTime = 30f * (norm > 0.01f ? (0.25f + norm * 0.75f) : 0f);
-        sparksEmission.rateOverTime = 45f * (norm * norm);
+        boardFlamesEmission.rateOverTime = 170f * norm;
+        floorFlamesEmission.rateOverTime = 220f * norm;
+        electricalCoreEmission.rateOverTime = 120f * norm;
+        heavyFloorSmokeEmission.rateOverTime = 95f * (norm > 0.01f ? (0.35f + norm * 0.65f) : 0f);
+        boardSmokeEmission.rateOverTime = 55f * (norm > 0.01f ? (0.3f + norm * 0.7f) : 0f);
+        wallSparksEmission.rateOverTime = 55f * (norm * norm);
+        moltenDripsEmission.rateOverTime = 18f * (norm * norm);
 
         if (fireLight != null)
         {
-            fireLight.intensity = 2.8f * norm;
+            fireLight.intensity = 6.0f * norm;
             fireLight.enabled = norm > 0.02f;
         }
 
-        if (sparkLight != null) sparkLight.enabled = norm > 0.05f;
+        if (sparkArcLight != null) sparkArcLight.enabled = norm > 0.05f;
 
         if (alarmSource != null)
         {
-            alarmSource.volume = 0.5f * norm;
+            alarmSource.volume = 0.55f * norm;
             if (norm <= 0.01f && alarmSource.isPlaying) alarmSource.Stop();
             else if (norm > 0.01f && !alarmSource.isPlaying) alarmSource.Play();
         }
     }
 
     // =========================================================================
-    // 2. 3D ROOM & WALL SWITCHBOARD
+    // 2. 3D ROOM, REALISTIC CIRCUIT BOARD & INTERACTIVE EXIT DOORS
     // =========================================================================
-    private void Build3DRoomAndSwitchboard()
+    private void BuildRoomCircuitBoardAndDoors()
     {
         roomRoot = new GameObject("3D_Room_Environment");
         roomRoot.transform.SetParent(transform, false);
 
         Shader solidShader = GetCompatibleSolidShader();
-        Material floorMat = CreateSolidMaterial(solidShader, new Color(0.72f, 0.72f, 0.73f));
+        Material floorMat = CreateSolidMaterial(solidShader, new Color(0.7f, 0.7f, 0.72f));
         floorMat.mainTexture = GenerateTileTexture(128);
 
-        Material wallMat = CreateSolidMaterial(solidShader, new Color(0.85f, 0.84f, 0.82f));
-        Material trimMat = CreateSolidMaterial(solidShader, new Color(0.25f, 0.25f, 0.27f));
+        Material wallMat = CreateSolidMaterial(solidShader, new Color(0.82f, 0.82f, 0.80f));
+        Material trimMat = CreateSolidMaterial(solidShader, new Color(0.22f, 0.22f, 0.24f));
 
         Vector3 center = Vector3.forward * 1.5f;
         if (Camera.main != null)
@@ -280,284 +310,488 @@ public class FireSafetyManager : MonoBehaviour
             center = camPos + fwdFlat * 1.6f;
         }
 
-        // Floor
+        // Room Floor & Wall
         GameObject floor = GameObject.CreatePrimitive(PrimitiveType.Cube);
         floor.name = "FloorSlab";
         floor.transform.SetParent(roomRoot.transform, false);
         floor.transform.position = center + new Vector3(0, -0.72f, 0);
-        floor.transform.localScale = new Vector3(3.2f, 0.04f, 3.2f);
+        floor.transform.localScale = new Vector3(3.4f, 0.04f, 3.4f);
         floor.GetComponent<Renderer>().material = floorMat;
 
-        // Back Wall
         GameObject wall = GameObject.CreatePrimitive(PrimitiveType.Cube);
         wall.name = "BackWall";
         wall.transform.SetParent(roomRoot.transform, false);
         wall.transform.position = center + new Vector3(0, 0.46f, 1.5f);
-        wall.transform.localScale = new Vector3(3.2f, 2.4f, 0.06f);
+        wall.transform.localScale = new Vector3(3.4f, 2.4f, 0.06f);
         wall.GetComponent<Renderer>().material = wallMat;
 
-        // Baseboard
         GameObject trim = GameObject.CreatePrimitive(PrimitiveType.Cube);
         trim.name = "Baseboard";
         trim.transform.SetParent(roomRoot.transform, false);
         trim.transform.position = center + new Vector3(0, -0.66f, 1.46f);
-        trim.transform.localScale = new Vector3(3.2f, 0.08f, 0.03f);
+        trim.transform.localScale = new Vector3(3.4f, 0.08f, 0.03f);
         trim.GetComponent<Renderer>().material = trimMat;
 
-        // Wall Switchboard
-        switchboardRoot = new GameObject("Wall_Switchboard");
-        switchboardRoot.transform.SetParent(roomRoot.transform, false);
+        // REALISTIC CIRCUIT BOARD
+        circuitBoardRoot = new GameObject("Realistic_Circuit_Board");
+        circuitBoardRoot.transform.SetParent(roomRoot.transform, false);
         Vector3 boardPos = center + new Vector3(0, 0.25f, 1.44f);
-        switchboardRoot.transform.position = boardPos;
+        circuitBoardRoot.transform.position = boardPos;
 
-        Material boxMetal = CreateSolidMaterial(solidShader, new Color(0.22f, 0.23f, 0.25f));
-        Material redMat = CreateSolidMaterial(solidShader, new Color(0.85f, 0.15f, 0.1f));
-        Material blueMat = CreateSolidMaterial(solidShader, new Color(0.15f, 0.4f, 0.9f));
-        Material copperMat = CreateSolidMaterial(solidShader, new Color(0.95f, 0.6f, 0.25f));
+        Material metalBoxMat = CreateSolidMaterial(solidShader, new Color(0.20f, 0.21f, 0.23f));
+        Material interiorMat = CreateSolidMaterial(solidShader, new Color(0.12f, 0.12f, 0.14f));
+        Material dinRailMat = CreateSolidMaterial(solidShader, new Color(0.72f, 0.72f, 0.75f));
+        Material breakerMat = CreateSolidMaterial(solidShader, new Color(0.40f, 0.41f, 0.44f));
+        Material charredMat = CreateSolidMaterial(solidShader, new Color(0.06f, 0.05f, 0.04f));
+        Material redWireMat = CreateSolidMaterial(solidShader, new Color(0.85f, 0.15f, 0.1f));
+        Material blueWireMat = CreateSolidMaterial(solidShader, new Color(0.15f, 0.4f, 0.9f));
+        Material greenWireMat = CreateSolidMaterial(solidShader, new Color(0.15f, 0.75f, 0.2f));
+        Material copperMat = CreateSolidMaterial(solidShader, new Color(0.96f, 0.62f, 0.25f));
 
-        CreateSubCube(switchboardRoot.transform, Vector3.zero, new Vector3(0.24f, 0.32f, 0.06f), boxMetal);
-        CreateSubCube(switchboardRoot.transform, new Vector3(0, 0.04f, -0.032f), new Vector3(0.16f, 0.10f, 0.02f), CreateSolidMaterial(solidShader, new Color(0.08f, 0.06f, 0.05f)));
+        float w = 0.30f, h = 0.40f, d = 0.08f;
 
-        Vector3 wireOrigin = boardPos + new Vector3(0.08f, -0.16f, -0.02f);
-        BuildWireSegment(switchboardRoot.transform, wireOrigin, boardPos + new Vector3(0.07f, -0.26f, -0.04f), redMat, 0.009f);
-        BuildWireSegment(switchboardRoot.transform, wireOrigin + new Vector3(-0.02f, 0, 0), boardPos + new Vector3(0.05f, -0.28f, -0.03f), blueMat, 0.009f);
+        // Cabinet Box & Door
+        CreateSubCube(circuitBoardRoot.transform, new Vector3(0, 0, d * 0.5f), new Vector3(w, h, 0.01f), interiorMat);
+        CreateSubCube(circuitBoardRoot.transform, new Vector3(-w * 0.5f, 0, 0), new Vector3(0.01f, h, d), metalBoxMat);
+        CreateSubCube(circuitBoardRoot.transform, new Vector3(w * 0.5f, 0, 0), new Vector3(0.01f, h, d), metalBoxMat);
+        CreateSubCube(circuitBoardRoot.transform, new Vector3(0, h * 0.5f, 0), new Vector3(w, 0.01f, d), metalBoxMat);
+        CreateSubCube(circuitBoardRoot.transform, new Vector3(0, -h * 0.5f, 0), new Vector3(w, 0.01f, d), metalBoxMat);
 
-        CreateSubCylinder(switchboardRoot.transform, new Vector3(0.07f, -0.27f, -0.04f), new Vector3(0.007f, 0.016f, 0.007f), copperMat, Vector3.zero);
-        CreateSubCylinder(switchboardRoot.transform, new Vector3(0.05f, -0.29f, -0.03f), new Vector3(0.007f, 0.016f, 0.007f), copperMat, Vector3.zero);
+        GameObject door = new GameObject("OpenCabinetDoor");
+        door.transform.SetParent(circuitBoardRoot.transform, false);
+        door.transform.localPosition = new Vector3(-w * 0.5f, 0, -d * 0.5f);
+        door.transform.localRotation = Quaternion.Euler(0, -70f, 0);
+        CreateSubCube(door.transform, new Vector3(w * 0.5f, 0, 0), new Vector3(w, h, 0.008f), metalBoxMat);
 
-        // Wall scorch mark
+        // DIN Rail & Breakers
+        CreateSubCube(circuitBoardRoot.transform, new Vector3(0, 0.07f, 0.025f), new Vector3(w - 0.04f, 0.02f, 0.006f), dinRailMat);
+        for (int i = 0; i < 5; i++)
+        {
+            Vector3 mcbPos = new Vector3(-0.08f + i * 0.04f, 0.07f, 0.015f);
+            CreateSubCube(circuitBoardRoot.transform, mcbPos, new Vector3(0.032f, 0.07f, 0.025f), (i >= 3) ? charredMat : breakerMat);
+        }
+
+        // Broken conduit with jagged frayed wires
+        Vector3 breakOrigin = boardPos + new Vector3(0.08f, -0.16f, -0.02f);
+        CreateSubCylinder(circuitBoardRoot.transform, new Vector3(0.08f, -0.18f, 0.01f), new Vector3(0.04f, 0.06f, 0.04f), charredMat, Vector3.zero);
+
+        BuildWireSegment(circuitBoardRoot.transform, breakOrigin, breakOrigin + new Vector3(-0.02f, -0.09f, -0.04f), redWireMat, 0.009f);
+        CreateSubCylinder(circuitBoardRoot.transform, breakOrigin + new Vector3(-0.02f, -0.10f, -0.04f), new Vector3(0.006f, 0.016f, 0.006f), copperMat, Vector3.zero);
+
+        BuildWireSegment(circuitBoardRoot.transform, breakOrigin, breakOrigin + new Vector3(0.03f, -0.11f, -0.03f), blueWireMat, 0.009f);
+        CreateSubCylinder(circuitBoardRoot.transform, breakOrigin + new Vector3(0.03f, -0.12f, -0.03f), new Vector3(0.006f, 0.016f, 0.006f), copperMat, Vector3.zero);
+
+        BuildWireSegment(circuitBoardRoot.transform, breakOrigin, breakOrigin + new Vector3(0.01f, -0.13f, -0.01f), greenWireMat, 0.008f);
+        CreateSubCylinder(circuitBoardRoot.transform, breakOrigin + new Vector3(0.01f, -0.14f, -0.01f), new Vector3(0.006f, 0.014f, 0.006f), copperMat, Vector3.zero);
+
+        // Wall Scorch Blast Mark
         GameObject wallSoot = GameObject.CreatePrimitive(PrimitiveType.Quad);
-        wallSoot.transform.SetParent(switchboardRoot.transform, false);
+        wallSoot.transform.SetParent(circuitBoardRoot.transform, false);
         wallSoot.transform.position = boardPos + new Vector3(0.04f, -0.08f, -0.035f);
-        wallSoot.transform.localScale = new Vector3(0.42f, 0.48f, 1f);
+        wallSoot.transform.localScale = new Vector3(0.55f, 0.65f, 1f);
         Destroy(wallSoot.GetComponent<Collider>());
         wallSoot.GetComponent<Renderer>().material = new Material(Shader.Find("Sprites/Default")) { mainTexture = GenerateSootTexture(64) };
 
-        // Sparks
         Material pMat = new Material(Shader.Find("Sprites/Default")) { mainTexture = GenerateSoftCircleTexture(64) };
-        sparksPS = CreateParticleChild("WallSparks", wireOrigin + new Vector3(0, -0.1f, 0), pMat, switchboardRoot.transform);
-        var spMain = sparksPS.main;
-        spMain.startLifetime = new ParticleSystem.MinMaxCurve(0.12f, 0.35f);
-        spMain.startSpeed = new ParticleSystem.MinMaxCurve(2.0f, 4.2f);
+
+        // High-Voltage Electrical Arc Sparks
+        wallSparksPS = CreateParticleChild("ArcSparks", breakOrigin + new Vector3(0, -0.1f, -0.03f), pMat, circuitBoardRoot.transform);
+        var spMain = wallSparksPS.main;
+        spMain.startLifetime = new ParticleSystem.MinMaxCurve(0.1f, 0.32f);
+        spMain.startSpeed = new ParticleSystem.MinMaxCurve(2.5f, 5.0f);
         spMain.startSize = new ParticleSystem.MinMaxCurve(0.015f, 0.035f);
         spMain.gravityModifier = 0.95f;
         spMain.simulationSpace = ParticleSystemSimulationSpace.World;
-        sparksEmission = sparksPS.emission;
-        sparksEmission.rateOverTime = 45f;
+        wallSparksEmission = wallSparksPS.emission;
+        wallSparksEmission.rateOverTime = 55f;
 
-        var spShape = sparksPS.shape;
+        var spShape = wallSparksPS.shape;
         spShape.shapeType = ParticleSystemShapeType.Sphere;
-        spShape.radius = 0.02f;
+        spShape.radius = 0.03f;
 
-        var spCol = sparksPS.colorOverLifetime;
+        var spCol = wallSparksPS.colorOverLifetime;
         spCol.enabled = true;
         Gradient spGrad = new Gradient();
         spGrad.SetKeys(
-            new GradientColorKey[] { new GradientColorKey(new Color(0.4f, 0.85f, 1f), 0f), new GradientColorKey(new Color(1f, 0.95f, 0.3f), 0.35f), new GradientColorKey(new Color(1f, 0.35f, 0f), 1f) },
+            new GradientColorKey[] { new GradientColorKey(new Color(0.35f, 0.85f, 1f), 0f), new GradientColorKey(new Color(1f, 0.95f, 0.3f), 0.35f), new GradientColorKey(new Color(1f, 0.35f, 0f), 1f) },
             new GradientAlphaKey[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(0f, 1f) }
         );
         spCol.color = spGrad;
 
-        // Spark Flash Light
+        // Molten burning plastic drops
+        moltenDripsPS = CreateParticleChild("MoltenDrips", breakOrigin + new Vector3(0, -0.08f, -0.02f), pMat, circuitBoardRoot.transform);
+        var drMain = moltenDripsPS.main;
+        drMain.startLifetime = new ParticleSystem.MinMaxCurve(0.4f, 0.7f);
+        drMain.startSpeed = new ParticleSystem.MinMaxCurve(0.2f, 0.5f);
+        drMain.startSize = new ParticleSystem.MinMaxCurve(0.016f, 0.035f);
+        drMain.gravityModifier = 1.4f;
+        drMain.simulationSpace = ParticleSystemSimulationSpace.World;
+        moltenDripsEmission = moltenDripsPS.emission;
+        moltenDripsEmission.rateOverTime = 18f;
+
+        var drCol = moltenDripsPS.colorOverLifetime;
+        drCol.enabled = true;
+        drCol.color = GetFlameGradient();
+
+        // Spark Arc Flash Light
         GameObject sLight = new GameObject("SparkFlashLight");
-        sLight.transform.SetParent(switchboardRoot.transform, false);
-        sLight.transform.position = wireOrigin + new Vector3(0, -0.05f, -0.1f);
-        sparkLight = sLight.AddComponent<Light>();
-        sparkLight.type = LightType.Point;
-        sparkLight.color = new Color(0.4f, 0.75f, 1f);
-        sparkLight.range = 2.4f;
-        sparkLight.intensity = 0f;
+        sLight.transform.SetParent(circuitBoardRoot.transform, false);
+        sLight.transform.position = breakOrigin + new Vector3(0, -0.06f, -0.1f);
+        sparkArcLight = sLight.AddComponent<Light>();
+        sparkArcLight.type = LightType.Point;
+        sparkArcLight.color = new Color(0.4f, 0.75f, 1f);
+        sparkArcLight.range = 2.8f;
+        sparkArcLight.intensity = 0f;
+
+        // -------------------------------------------------------------
+        // BUILD INTERACTIVE EXIT DOORS (1 DAMAGED, 1 SAFE)
+        // -------------------------------------------------------------
+        Material safeDoorMat = CreateSolidMaterial(solidShader, new Color(0.85f, 0.86f, 0.88f));
+        Material burntDoorMat = CreateSolidMaterial(solidShader, new Color(0.12f, 0.10f, 0.09f));
+        Material exitSignMat = CreateSolidMaterial(solidShader, new Color(0.15f, 0.85f, 0.25f)); // Glowing Green
+        Material blockedSignMat = CreateSolidMaterial(solidShader, new Color(0.85f, 0.15f, 0.15f)); // Glowing Red
+
+        // Door A: DAMAGED / BLOCKED EXIT (Left side)
+        Vector3 damagedDoorPos = center + new Vector3(-1.05f, 0.18f, 1.45f);
+        damagedDoorObj = BuildInteractiveDoor(damagedDoorPos, "DamagedDoor", burntDoorMat, blockedSignMat, false);
+
+        // Smoke seeping through damaged door cracks
+        doorSmokeLeakPS = CreateParticleChild("DoorSmokeLeak", damagedDoorPos + new Vector3(0, -0.7f, -0.03f), pMat, damagedDoorObj.transform);
+        var dsmMain = doorSmokeLeakPS.main;
+        dsmMain.startLifetime = new ParticleSystem.MinMaxCurve(1.5f, 2.5f);
+        dsmMain.startSpeed = new ParticleSystem.MinMaxCurve(0.15f, 0.4f);
+        dsmMain.startSize = new ParticleSystem.MinMaxCurve(0.15f, 0.35f);
+        doorSmokeLeakEmission = doorSmokeLeakPS.emission;
+        doorSmokeLeakEmission.rateOverTime = 12f;
+
+        // Door B: SAFE EMERGENCY EXIT (Right side)
+        Vector3 safeDoorPos = center + new Vector3(1.05f, 0.18f, 1.45f);
+        safeDoorObj = BuildInteractiveDoor(safeDoorPos, "SafeExitDoor", safeDoorMat, exitSignMat, true);
+    }
+
+    private GameObject BuildInteractiveDoor(Vector3 pos, string name, Material doorMat, Material signMat, bool isSafe)
+    {
+        GameObject doorObj = new GameObject(name);
+        doorObj.transform.SetParent(roomRoot.transform, false);
+        doorObj.transform.position = pos;
+
+        if (isSafe)
+        {
+            // Door Slab (1.8m tall x 0.75m wide) - intact, undamaged
+            GameObject slab = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            slab.name = "DoorLeaf";
+            slab.transform.SetParent(doorObj.transform, false);
+            slab.transform.localScale = new Vector3(0.75f, 1.75f, 0.04f);
+            slab.GetComponent<Renderer>().material = doorMat;
+            Destroy(slab.GetComponent<Collider>());
+
+            // Door Handle
+            GameObject handle = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            handle.transform.SetParent(doorObj.transform, false);
+            handle.transform.localPosition = new Vector3(0.28f, 0, -0.035f);
+            handle.transform.localScale = new Vector3(0.03f, 0.12f, 0.04f);
+            Destroy(handle.GetComponent<Collider>());
+            handle.GetComponent<Renderer>().material = CreateSolidMaterial(GetCompatibleSolidShader(), new Color(0.6f, 0.6f, 0.62f));
+        }
+        else
+        {
+            // Genuinely shattered door - blown-open cavity, splintered planks, hanging
+            // shards, and fallen debris at the foot, instead of one flat dark cube.
+            BuildShatteredDoorLeaf(doorObj.transform, doorMat);
+        }
+
+        // Illuminated Sign Box above door
+        GameObject sign = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        sign.transform.SetParent(doorObj.transform, false);
+        sign.transform.localPosition = new Vector3(0, 1.02f, -0.02f);
+        sign.transform.localScale = new Vector3(0.45f, 0.14f, 0.05f);
+        Destroy(sign.GetComponent<Collider>());
+        sign.GetComponent<Renderer>().material = signMat;
+
+        // Clickable Trigger Collider & Handler Component
+        BoxCollider boxCol = doorObj.AddComponent<BoxCollider>();
+        boxCol.size = new Vector3(0.85f, 2.1f, 0.2f);
+        var clicker = doorObj.AddComponent<DoorClickHandler>();
+        clicker.Init(this, isSafe);
+
+        return doorObj;
+    }
+
+    private void BuildShatteredDoorLeaf(Transform parent, Material charredMat)
+    {
+        Shader solidShader = GetCompatibleSolidShader();
+        Material cavityMat = CreateSolidMaterial(solidShader, new Color(0.015f, 0.015f, 0.02f));
+        Material splitCharMat = CreateSolidMaterial(solidShader, new Color(0.09f, 0.07f, 0.06f));
+        Material emberEdgeMat = CreateSolidMaterial(solidShader, new Color(0.55f, 0.18f, 0.03f));
+
+        // Dark blown-open cavity behind the frame, so the gaps between planks
+        // read as an actual hole punched through the door rather than empty space.
+        GameObject cavity = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        cavity.name = "BlownOpenCavity";
+        cavity.transform.SetParent(parent, false);
+        cavity.transform.localPosition = new Vector3(0f, 0.05f, 0.01f);
+        cavity.transform.localScale = new Vector3(0.68f, 1.62f, 0.012f);
+        Destroy(cavity.GetComponent<Collider>());
+        cavity.GetComponent<Renderer>().material = cavityMat;
+
+        // Remaining frame boards - uneven widths, gaps, and tilts instead of a solid slab
+        BuildDoorPlank(parent, new Vector3(-0.335f, 0.55f, -0.012f), new Vector3(0.095f, 0.62f, 0.036f), -5f, charredMat);
+        BuildDoorPlank(parent, new Vector3(-0.235f, 0.10f, -0.018f), new Vector3(0.10f, 1.10f, 0.036f), 4f, splitCharMat);
+        BuildDoorPlank(parent, new Vector3(0.305f, 0.60f, -0.012f), new Vector3(0.115f, 0.52f, 0.036f), 9f, charredMat);
+        BuildDoorPlank(parent, new Vector3(0.24f, -0.42f, -0.02f), new Vector3(0.13f, 0.70f, 0.036f), -15f, splitCharMat);
+        BuildDoorPlank(parent, new Vector3(-0.02f, -0.66f, -0.016f), new Vector3(0.17f, 0.34f, 0.036f), 11f, charredMat);
+
+        // Header board - still mostly attached along the top, scorched and cracked
+        BuildDoorPlank(parent, new Vector3(0f, 0.84f, -0.006f), new Vector3(0.72f, 0.13f, 0.038f), -2f, splitCharMat);
+
+        // Jagged splinter shards jutting out at odd angles along the break
+        BuildSplinterShard(parent, new Vector3(-0.06f, 0.28f, -0.01f), new Vector3(0.022f, 0.44f, 0.022f), 35f, emberEdgeMat);
+        BuildSplinterShard(parent, new Vector3(0.08f, -0.04f, -0.015f), new Vector3(0.02f, 0.36f, 0.02f), -50f, emberEdgeMat);
+        BuildSplinterShard(parent, new Vector3(-0.03f, -0.27f, -0.01f), new Vector3(0.022f, 0.28f, 0.022f), 62f, emberEdgeMat);
+
+        // Broken-off chunks that have fallen and landed at the foot of the door
+        BuildDebrisChunk(parent, new Vector3(-0.22f, -0.86f, 0.09f), new Vector3(0.22f, 0.045f, 0.16f), 18f, charredMat);
+        BuildDebrisChunk(parent, new Vector3(0.16f, -0.865f, 0.15f), new Vector3(0.16f, 0.04f, 0.14f), -25f, splitCharMat);
+        BuildDebrisChunk(parent, new Vector3(0.02f, -0.87f, 0.21f), new Vector3(0.12f, 0.035f, 0.10f), 42f, charredMat);
+    }
+
+    private void BuildDoorPlank(Transform parent, Vector3 localPos, Vector3 scale, float zRotDeg, Material mat)
+    {
+        GameObject plank = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        plank.name = "BrokenPlank";
+        plank.transform.SetParent(parent, false);
+        plank.transform.localPosition = localPos;
+        plank.transform.localRotation = Quaternion.Euler(0, 0, zRotDeg);
+        plank.transform.localScale = scale;
+        Destroy(plank.GetComponent<Collider>());
+        plank.GetComponent<Renderer>().material = mat;
+    }
+
+    private void BuildSplinterShard(Transform parent, Vector3 localPos, Vector3 scale, float zRotDeg, Material mat)
+    {
+        GameObject shard = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        shard.name = "SplinterShard";
+        shard.transform.SetParent(parent, false);
+        shard.transform.localPosition = localPos;
+        shard.transform.localRotation = Quaternion.Euler(12f, -10f, zRotDeg);
+        shard.transform.localScale = scale;
+        Destroy(shard.GetComponent<Collider>());
+        shard.GetComponent<Renderer>().material = mat;
+    }
+
+    private void BuildDebrisChunk(Transform parent, Vector3 localPos, Vector3 scale, float yRotDeg, Material mat)
+    {
+        GameObject chunk = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        chunk.name = "FallenDebris";
+        chunk.transform.SetParent(parent, false);
+        chunk.transform.localPosition = localPos;
+        chunk.transform.localRotation = Quaternion.Euler(6f, yRotDeg, -4f);
+        chunk.transform.localScale = scale;
+        Destroy(chunk.GetComponent<Collider>());
+        chunk.GetComponent<Renderer>().material = mat;
     }
 
     // =========================================================================
-    // 3. TAPERED GROUND FIRE
+    // 3. TALL AGGRESSIVE ELECTRICAL FLAMES & A LOT OF BLACK SMOKE (NO WOOD)
     // =========================================================================
-    private void BuildShapedGroundFire()
+    private void BuildTallFlamesAndHeavySmoke()
     {
-        fireRoot = new GameObject("Ground_Fire_System");
+        fireRoot = new GameObject("Electrical_Fire_Blaze");
         fireRoot.transform.SetParent(transform, false);
 
-        Vector3 groundCenter = Vector3.forward * 1.5f + new Vector3(0, -0.68f, 0.45f);
-        if (switchboardRoot != null)
+        Vector3 groundCenter = Vector3.forward * 1.5f + new Vector3(0.08f, -0.68f, 0.65f);
+        if (circuitBoardRoot != null)
         {
-            groundCenter = new Vector3(switchboardRoot.transform.position.x + 0.05f, -0.68f, switchboardRoot.transform.position.z - 0.75f);
+            groundCenter = new Vector3(circuitBoardRoot.transform.position.x + 0.08f, -0.68f, circuitBoardRoot.transform.position.z - 0.70f);
         }
         fireRoot.transform.position = groundCenter;
 
         Shader solidShader = GetCompatibleSolidShader();
-        Material logMat = CreateSolidMaterial(solidShader, new Color(0.08f, 0.06f, 0.05f));
-        Material coalGlowMat = CreateSolidMaterial(solidShader, new Color(0.9f, 0.25f, 0.05f));
+        Material meltedGlowMat = CreateSolidMaterial(solidShader, new Color(0.95f, 0.28f, 0.04f));
 
+        // Large Floor Electrical Scorch Burn Decal
         GameObject groundSoot = GameObject.CreatePrimitive(PrimitiveType.Quad);
-        groundSoot.name = "GroundScorchMark";
+        groundSoot.name = "FloorScorchMark";
         groundSoot.transform.SetParent(fireRoot.transform, false);
         groundSoot.transform.localPosition = new Vector3(0, 0.002f, 0);
         groundSoot.transform.localRotation = Quaternion.Euler(90f, 0, 0);
-        groundSoot.transform.localScale = new Vector3(1.2f, 1.2f, 1f);
+        groundSoot.transform.localScale = new Vector3(1.8f, 1.6f, 1f);
         Destroy(groundSoot.GetComponent<Collider>());
         groundSoot.GetComponent<Renderer>().material = new Material(Shader.Find("Sprites/Default")) { mainTexture = GenerateSootTexture(64) };
 
-        CreateSubCylinder(fireRoot.transform, new Vector3(0, 0.03f, 0), new Vector3(0.07f, 0.38f, 0.07f), logMat, new Vector3(8, 25, 5));
-        CreateSubCylinder(fireRoot.transform, new Vector3(0.02f, 0.035f, -0.02f), new Vector3(0.06f, 0.36f, 0.06f), logMat, new Vector3(-8, -40, 10));
-        CreateSubCylinder(fireRoot.transform, new Vector3(-0.02f, 0.05f, 0.01f), new Vector3(0.055f, 0.32f, 0.055f), logMat, new Vector3(12, 75, -8));
-        CreateSubCube(fireRoot.transform, new Vector3(0, 0.03f, 0), new Vector3(0.12f, 0.06f, 0.12f), coalGlowMat);
+        // Flat molten blister pool on the floor (NO CYLINDERS / NO WOOD STICKS)
+        CreateSubCube(fireRoot.transform, new Vector3(0, 0.008f, 0), new Vector3(0.35f, 0.015f, 0.30f), meltedGlowMat);
 
         Material pMat = new Material(Shader.Find("Sprites/Default")) { mainTexture = GenerateSoftCircleTexture(64) };
 
-        // Main Flames (Tapered)
-        mainFlamesPS = CreateParticleChild("MainFlames_Tapered", new Vector3(0, 0.06f, 0), pMat, fireRoot.transform);
-        var mfMain = mainFlamesPS.main;
-        mfMain.startLifetime = new ParticleSystem.MinMaxCurve(0.65f, 1.15f);
-        mfMain.startSpeed = new ParticleSystem.MinMaxCurve(0.85f, 1.7f);
-        mfMain.startSize = new ParticleSystem.MinMaxCurve(0.35f, 0.58f);
-        mfMain.simulationSpace = ParticleSystemSimulationSpace.World;
-        mainFlamesEmission = mainFlamesPS.emission;
-        mainFlamesEmission.rateOverTime = 85f;
+        // --- LAYER 1: TALL LONG FLAMES (RAGING UPWARD FROM FLOOR) ---
+        floorFlamesPS = CreateParticleChild("TallFloorFlames", groundCenter + new Vector3(0, 0.05f, 0), pMat, fireRoot.transform);
+        var ffMain = floorFlamesPS.main;
+        ffMain.startLifetime = new ParticleSystem.MinMaxCurve(1.1f, 1.9f); // Longer-lived so flames climb much higher
+        ffMain.startSpeed = new ParticleSystem.MinMaxCurve(3.4f, 6.2f); // Huge upward velocity for TALL flames
+        ffMain.startSize = new ParticleSystem.MinMaxCurve(0.9f, 1.7f); // Wide, huge flame tongues
+        ffMain.simulationSpace = ParticleSystemSimulationSpace.World;
+        floorFlamesEmission = floorFlamesPS.emission;
+        floorFlamesEmission.rateOverTime = 220f; // Dense, roaring blaze
 
-        var mfShape = mainFlamesPS.shape;
-        mfShape.shapeType = ParticleSystemShapeType.Cone;
-        mfShape.angle = 8f;
-        mfShape.radius = 0.16f;
-        mfShape.rotation = new Vector3(-90f, 0, 0);
+        var ffShape = floorFlamesPS.shape;
+        ffShape.shapeType = ParticleSystemShapeType.Circle;
+        ffShape.radius = 0.42f; // Wider base for a huge fire
+        ffShape.rotation = new Vector3(-90f, 0, 0);
 
-        var mfCol = mainFlamesPS.colorOverLifetime;
-        mfCol.enabled = true;
-        mfCol.color = GetFlameGradient();
+        var ffCol = floorFlamesPS.colorOverLifetime;
+        ffCol.enabled = true;
+        ffCol.color = GetFlameGradient();
 
-        var mfSize = mainFlamesPS.sizeOverLifetime;
-        mfSize.enabled = true;
-        AnimationCurve tCurve = new AnimationCurve();
-        tCurve.AddKey(0f, 0.45f);
-        tCurve.AddKey(0.2f, 1.0f);
-        tCurve.AddKey(0.65f, 0.55f);
-        tCurve.AddKey(1f, 0.05f);
-        mfSize.size = new ParticleSystem.MinMaxCurve(1f, tCurve);
+        var ffSize = floorFlamesPS.sizeOverLifetime;
+        ffSize.enabled = true;
+        AnimationCurve fCurve = new AnimationCurve();
+        fCurve.AddKey(0f, 0.35f);
+        fCurve.AddKey(0.25f, 1.0f);
+        fCurve.AddKey(0.75f, 0.55f);
+        fCurve.AddKey(1f, 0.04f); // Tapers into long licking tongues
+        ffSize.size = new ParticleSystem.MinMaxCurve(1f, fCurve);
 
-        var mfNoise = mainFlamesPS.noise;
-        mfNoise.enabled = true;
-        mfNoise.strength = 0.38f;
-        mfNoise.frequency = 0.55f;
-        mfNoise.scrollSpeed = 1.3f;
+        var ffNoise = floorFlamesPS.noise;
+        ffNoise.enabled = true;
+        ffNoise.strength = 0.55f;
+        ffNoise.frequency = 0.65f;
+        ffNoise.scrollSpeed = 1.8f;
 
-        // Core Flames
-        coreFlamesPS = CreateParticleChild("CoreFlames", new Vector3(0, 0.06f, 0), pMat, fireRoot.transform);
-        var cMain = coreFlamesPS.main;
-        cMain.startLifetime = new ParticleSystem.MinMaxCurve(0.3f, 0.55f);
-        cMain.startSpeed = new ParticleSystem.MinMaxCurve(0.4f, 0.85f);
-        cMain.startSize = new ParticleSystem.MinMaxCurve(0.18f, 0.32f);
-        cMain.simulationSpace = ParticleSystemSimulationSpace.World;
-        coreFlamesEmission = coreFlamesPS.emission;
-        coreFlamesEmission.rateOverTime = 55f;
+        // --- LAYER 2: CIRCUIT BOARD FLAMES (BURSTING OUT OF BROKEN WIRES) ---
+        Vector3 boardFlamesPos = (circuitBoardRoot != null) ? circuitBoardRoot.transform.position + new Vector3(0.06f, -0.12f, -0.04f) : new Vector3(0, 0.1f, 1.4f);
+        boardFlamesPS = CreateParticleChild("BoardFlames", boardFlamesPos, pMat, fireRoot.transform);
+        var bfMain = boardFlamesPS.main;
+        bfMain.startLifetime = new ParticleSystem.MinMaxCurve(0.9f, 1.6f);
+        bfMain.startSpeed = new ParticleSystem.MinMaxCurve(2.6f, 4.6f);
+        bfMain.startSize = new ParticleSystem.MinMaxCurve(0.6f, 1.15f);
+        bfMain.simulationSpace = ParticleSystemSimulationSpace.World;
+        boardFlamesEmission = boardFlamesPS.emission;
+        boardFlamesEmission.rateOverTime = 170f;
 
-        var cShape = coreFlamesPS.shape;
-        cShape.shapeType = ParticleSystemShapeType.Cone;
-        cShape.angle = 5f;
-        cShape.radius = 0.10f;
-        cShape.rotation = new Vector3(-90f, 0, 0);
+        var bfShape = boardFlamesPS.shape;
+        bfShape.shapeType = ParticleSystemShapeType.Cone;
+        bfShape.angle = 18f;
+        bfShape.radius = 0.12f;
+        bfShape.rotation = new Vector3(-90f, 0, 0);
 
-        var cCol = coreFlamesPS.colorOverLifetime;
-        cCol.enabled = true;
-        cCol.color = GetCoreGradient();
+        var bfCol = boardFlamesPS.colorOverLifetime;
+        bfCol.enabled = true;
+        bfCol.color = GetFlameGradient();
 
-        // Glowing Coals
-        coalsPS = CreateParticleChild("GlowingCoals", new Vector3(0, 0.02f, 0), pMat, fireRoot.transform);
-        var gcMain = coalsPS.main;
-        gcMain.startLifetime = new ParticleSystem.MinMaxCurve(0.8f, 1.6f);
-        gcMain.startSpeed = new ParticleSystem.MinMaxCurve(0.05f, 0.2f);
-        gcMain.startSize = new ParticleSystem.MinMaxCurve(0.14f, 0.26f);
-        gcMain.simulationSpace = ParticleSystemSimulationSpace.World;
-        coalsEmission = coalsPS.emission;
-        coalsEmission.rateOverTime = 35f;
+        var bfSize = boardFlamesPS.sizeOverLifetime;
+        bfSize.enabled = true;
+        bfSize.size = new ParticleSystem.MinMaxCurve(1f, fCurve);
 
-        var gcShape = coalsPS.shape;
-        gcShape.shapeType = ParticleSystemShapeType.Circle;
-        gcShape.radius = 0.18f;
-        gcShape.rotation = new Vector3(-90f, 0, 0);
+        var bfNoise = boardFlamesPS.noise;
+        bfNoise.enabled = true;
+        bfNoise.strength = 0.5f;
 
-        var gcCol = coalsPS.colorOverLifetime;
-        gcCol.enabled = true;
-        Gradient gcGrad = new Gradient();
-        gcGrad.SetKeys(
-            new GradientColorKey[] { new GradientColorKey(new Color(1f, 0.35f, 0.05f), 0f), new GradientColorKey(new Color(0.8f, 0.1f, 0f), 1f) },
-            new GradientAlphaKey[] { new GradientAlphaKey(0.8f, 0f), new GradientAlphaKey(0f, 1f) }
+        // --- LAYER 3: WHITE-HOT INCANDESCENT CORE ---
+        electricalCorePS = CreateParticleChild("ElectricalCore", groundCenter + new Vector3(0, 0.05f, 0), pMat, fireRoot.transform);
+        var ecMain = electricalCorePS.main;
+        ecMain.startLifetime = new ParticleSystem.MinMaxCurve(0.45f, 0.85f);
+        ecMain.startSpeed = new ParticleSystem.MinMaxCurve(1.0f, 2.0f);
+        ecMain.startSize = new ParticleSystem.MinMaxCurve(0.4f, 0.75f);
+        ecMain.simulationSpace = ParticleSystemSimulationSpace.World;
+        electricalCoreEmission = electricalCorePS.emission;
+        electricalCoreEmission.rateOverTime = 120f;
+
+        var ecShape = electricalCorePS.shape;
+        ecShape.shapeType = ParticleSystemShapeType.Cone;
+        ecShape.angle = 6f;
+        ecShape.radius = 0.18f;
+        ecShape.rotation = new Vector3(-90f, 0, 0);
+
+        var ecCol = electricalCorePS.colorOverLifetime;
+        ecCol.enabled = true;
+        ecCol.color = GetCoreGradient();
+
+        // --- LAYER 4: A LOT OF MASSIVE BILLOWING BLACK SMOKE (FLOOR + BOARD) ---
+        heavyFloorSmokePS = CreateParticleChild("HeavyFloorSmoke", groundCenter + new Vector3(0, 0.7f, 0), pMat, fireRoot.transform);
+        var smMain = heavyFloorSmokePS.main;
+        smMain.startLifetime = new ParticleSystem.MinMaxCurve(2.8f, 4.6f);
+        smMain.startSpeed = new ParticleSystem.MinMaxCurve(0.8f, 1.8f);
+        smMain.startSize = new ParticleSystem.MinMaxCurve(0.45f, 0.9f);
+        smMain.simulationSpace = ParticleSystemSimulationSpace.World;
+        heavyFloorSmokeEmission = heavyFloorSmokePS.emission;
+        heavyFloorSmokeEmission.rateOverTime = 95f; // A LOT of smoke!
+
+        var smShape = heavyFloorSmokePS.shape;
+        smShape.shapeType = ParticleSystemShapeType.Cone;
+        smShape.angle = 20f;
+        smShape.radius = 0.2f;
+        smShape.rotation = new Vector3(-90f, 0, 0);
+
+        var smCol = heavyFloorSmokePS.colorOverLifetime;
+        smCol.enabled = true;
+        Gradient smGrad = new Gradient();
+        smGrad.SetKeys(
+            new GradientColorKey[] {
+                new GradientColorKey(new Color(0.02f, 0.02f, 0.02f), 0f), // Deep carbon black
+                new GradientColorKey(new Color(0.08f, 0.08f, 0.09f), 0.6f),
+                new GradientColorKey(new Color(0.16f, 0.16f, 0.16f), 1f)
+            },
+            new GradientAlphaKey[] {
+                new GradientAlphaKey(0f, 0f),
+                new GradientAlphaKey(0.9f, 0.2f),
+                new GradientAlphaKey(0.7f, 0.7f),
+                new GradientAlphaKey(0f, 1f)
+            }
         );
-        gcCol.color = gcGrad;
+        smCol.color = smGrad;
 
-        // Rising Embers
-        embersPS = CreateParticleChild("RisingEmbers", new Vector3(0, 0.1f, 0), pMat, fireRoot.transform);
-        var eMain = embersPS.main;
-        eMain.startLifetime = new ParticleSystem.MinMaxCurve(1.2f, 2.2f);
-        eMain.startSpeed = new ParticleSystem.MinMaxCurve(0.8f, 1.8f);
-        eMain.startSize = new ParticleSystem.MinMaxCurve(0.015f, 0.04f);
-        eMain.simulationSpace = ParticleSystemSimulationSpace.World;
-        embersEmission = embersPS.emission;
-        embersEmission.rateOverTime = 40f;
+        var smSize = heavyFloorSmokePS.sizeOverLifetime;
+        smSize.enabled = true;
+        AnimationCurve smCurve = new AnimationCurve();
+        smCurve.AddKey(0f, 0.35f);
+        smCurve.AddKey(0.35f, 1.3f);
+        smCurve.AddKey(1f, 3.2f); // Billows broadly across the ceiling
+        smSize.size = new ParticleSystem.MinMaxCurve(1f, smCurve);
 
-        var eShape = embersPS.shape;
-        eShape.shapeType = ParticleSystemShapeType.Cone;
-        eShape.angle = 14f;
-        eShape.radius = 0.12f;
-        eShape.rotation = new Vector3(-90f, 0, 0);
+        var smNoise = heavyFloorSmokePS.noise;
+        smNoise.enabled = true;
+        smNoise.strength = 0.55f;
 
-        var eCol = embersPS.colorOverLifetime;
-        eCol.enabled = true;
-        Gradient eGrad = new Gradient();
-        eGrad.SetKeys(
-            new GradientColorKey[] { new GradientColorKey(new Color(1f, 0.85f, 0.3f), 0f), new GradientColorKey(new Color(1f, 0.25f, 0f), 1f) },
-            new GradientAlphaKey[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(0f, 1f) }
-        );
-        eCol.color = eGrad;
+        // Additional Board Smoke
+        boardSmokePS = CreateParticleChild("BoardSmoke", boardFlamesPos + new Vector3(0, 0.3f, 0), pMat, fireRoot.transform);
+        var bsmMain = boardSmokePS.main;
+        bsmMain.startLifetime = new ParticleSystem.MinMaxCurve(2.2f, 3.8f);
+        bsmMain.startSpeed = new ParticleSystem.MinMaxCurve(0.6f, 1.4f);
+        bsmMain.startSize = new ParticleSystem.MinMaxCurve(0.3f, 0.6f);
+        bsmMain.simulationSpace = ParticleSystemSimulationSpace.World;
+        boardSmokeEmission = boardSmokePS.emission;
+        boardSmokeEmission.rateOverTime = 55f;
 
-        var eNoise = embersPS.noise;
-        eNoise.enabled = true;
-        eNoise.strength = 0.5f;
+        // NOTE: shape/colorOverLifetime/sizeOverLifetime are structs returned by
+        // value from these properties, so members can't be set directly on the
+        // property result (that's the CS1612 error). Pull each into a local
+        // variable first, mutate the local, and Unity applies it back to the
+        // particle system automatically.
+        var bsmShape = boardSmokePS.shape;
+        bsmShape.shapeType = ParticleSystemShapeType.Cone;
 
-        // Billowing Smoke
-        smokePS = CreateParticleChild("BillowingSmoke", new Vector3(0, 0.55f, 0), pMat, fireRoot.transform);
-        var sMain = smokePS.main;
-        sMain.startLifetime = new ParticleSystem.MinMaxCurve(2.2f, 3.8f);
-        sMain.startSpeed = new ParticleSystem.MinMaxCurve(0.5f, 1.1f);
-        sMain.startSize = new ParticleSystem.MinMaxCurve(0.28f, 0.55f);
-        sMain.simulationSpace = ParticleSystemSimulationSpace.World;
-        smokeEmission = smokePS.emission;
-        smokeEmission.rateOverTime = 30f;
+        var bsmCol = boardSmokePS.colorOverLifetime;
+        bsmCol.enabled = true;
+        bsmCol.color = smGrad;
 
-        var sShape = smokePS.shape;
-        sShape.shapeType = ParticleSystemShapeType.Cone;
-        sShape.angle = 16f;
-        sShape.radius = 0.10f;
-        sShape.rotation = new Vector3(-90f, 0, 0);
+        var bsmSize = boardSmokePS.sizeOverLifetime;
+        bsmSize.enabled = true;
+        bsmSize.size = new ParticleSystem.MinMaxCurve(1f, smCurve);
 
-        var sCol = smokePS.colorOverLifetime;
-        sCol.enabled = true;
-        Gradient sGrad = new Gradient();
-        sGrad.SetKeys(
-            new GradientColorKey[] { new GradientColorKey(new Color(0.04f, 0.04f, 0.04f), 0f), new GradientColorKey(new Color(0.12f, 0.12f, 0.13f), 0.6f), new GradientColorKey(new Color(0.22f, 0.22f, 0.22f), 1f) },
-            new GradientAlphaKey[] { new GradientAlphaKey(0.75f, 0.2f), new GradientAlphaKey(0.55f, 0.65f), new GradientAlphaKey(0f, 1f) }
-        );
-        sCol.color = sGrad;
-
-        var sSize = smokePS.sizeOverLifetime;
-        sSize.enabled = true;
-        AnimationCurve sCurve = new AnimationCurve();
-        sCurve.AddKey(0f, 0.35f);
-        sCurve.AddKey(0.4f, 1.1f);
-        sCurve.AddKey(1f, 2.3f);
-        sSize.size = new ParticleSystem.MinMaxCurve(1f, sCurve);
-
-        // Light
-        GameObject fLight = new GameObject("GroundFireLight");
+        // Dynamic Orange Room Light
+        GameObject fLight = new GameObject("ElectricalFireLight");
         fLight.transform.SetParent(fireRoot.transform, false);
-        fLight.transform.localPosition = new Vector3(0, 0.35f, 0);
+        fLight.transform.localPosition = new Vector3(0, 0.55f, 0);
         fireLight = fLight.AddComponent<Light>();
         fireLight.type = LightType.Point;
-        fireLight.color = new Color(1f, 0.52f, 0.15f);
-        fireLight.range = 3.6f;
-        fireLight.intensity = 2.8f;
+        fireLight.color = new Color(1f, 0.48f, 0.12f);
+        fireLight.range = 7.5f;
+        fireLight.intensity = 6.0f;
     }
 
     // =========================================================================
-    // 4. 3D EXTINGUISHER
+    // 4. 3D CO2 EXTINGUISHER
     // =========================================================================
     private void Build3DExtinguisher()
     {
@@ -634,7 +868,7 @@ public class FireSafetyManager : MonoBehaviour
         bannerTextObj.transform.SetParent(bannerObj.transform, false);
         bannerText = bannerTextObj.AddComponent<Text>();
         bannerText.font = defaultFont;
-        bannerText.fontSize = 22;
+        bannerText.fontSize = 20;
         bannerText.fontStyle = FontStyle.Bold;
         bannerText.alignment = TextAnchor.MiddleCenter;
         bannerText.color = Color.white;
@@ -772,7 +1006,7 @@ public class FireSafetyManager : MonoBehaviour
         RectTransform sRT = successCard.GetComponent<RectTransform>();
         sRT.anchorMin = new Vector2(0.5f, 0.5f);
         sRT.anchorMax = new Vector2(0.5f, 0.5f);
-        sRT.sizeDelta = new Vector2(500f, 260f);
+        sRT.sizeDelta = new Vector2(520f, 270f);
 
         GameObject sTitleObj = new GameObject("STitle");
         sTitleObj.transform.SetParent(successCard.transform, false);
@@ -782,22 +1016,22 @@ public class FireSafetyManager : MonoBehaviour
         sTitle.fontStyle = FontStyle.Bold;
         sTitle.color = new Color(0.3f, 1f, 0.45f);
         sTitle.alignment = TextAnchor.MiddleCenter;
-        sTitle.text = "TRAINING COMPLETE!";
+        sTitle.text = "EVACUATION COMPLETE!";
         RectTransform stRT = sTitleObj.GetComponent<RectTransform>();
-        stRT.anchoredPosition = new Vector2(0, 60f);
-        stRT.sizeDelta = new Vector2(460f, 40f);
+        stRT.anchoredPosition = new Vector2(0, 65f);
+        stRT.sizeDelta = new Vector2(480f, 40f);
 
         GameObject sDescObj = new GameObject("SDesc");
         sDescObj.transform.SetParent(successCard.transform, false);
         Text sDesc = sDescObj.AddComponent<Text>();
         sDesc.font = defaultFont;
-        sDesc.fontSize = 16;
+        sDesc.fontSize = 15;
         sDesc.color = Color.white;
         sDesc.alignment = TextAnchor.MiddleCenter;
-        sDesc.text = "You correctly selected insulated PPE, deployed a CO2 extinguisher, aimed at the fuel base, and stopped the electrical fire!";
+        sDesc.text = "Training successful!\nYou equipped proper PPE, deployed CO2, aimed at the fuel base, and identified the safe, undamaged emergency exit to escape!";
         RectTransform sdRT = sDescObj.GetComponent<RectTransform>();
         sdRT.anchoredPosition = new Vector2(0, 10f);
-        sdRT.sizeDelta = new Vector2(440f, 60f);
+        sdRT.sizeDelta = new Vector2(460f, 65f);
 
         // Restart Button
         GameObject rBtnObj = new GameObject("RestartBtn");
@@ -828,20 +1062,20 @@ public class FireSafetyManager : MonoBehaviour
     }
 
     // =========================================================================
-    // 6. PROCEDURAL ALARM SOUND
+    // 6. PROCEDURAL EMERGENCY FIRE ALARM SIREN
     // =========================================================================
     private void BuildAlarmAudio()
     {
         alarmSource = gameObject.AddComponent<AudioSource>();
-        alarmSource.clip = GenerateAlarmClip();
+        alarmSource.clip = GenerateIndustrialAlarmClip();
         alarmSource.loop = true;
         alarmSource.playOnAwake = false;
         alarmSource.spatialBlend = 0.15f;
-        alarmSource.volume = 0.5f;
+        alarmSource.volume = 0.55f;
         alarmSource.Play();
     }
 
-    private AudioClip GenerateAlarmClip()
+    private AudioClip GenerateIndustrialAlarmClip()
     {
         int sampleRate = 44100;
         float duration = 1.0f;
@@ -851,19 +1085,12 @@ public class FireSafetyManager : MonoBehaviour
         for (int i = 0; i < sampleCount; i++)
         {
             float t = (float)i / sampleRate;
-            bool isBeeping = (t < 0.38f) || (t >= 0.5f && t < 0.88f);
-            if (isBeeping)
-            {
-                float tone = Mathf.Sin(2f * Mathf.PI * 920f * t) * 0.7f + Mathf.Sin(2f * Mathf.PI * 1840f * t) * 0.3f;
-                samples[i] = Mathf.Clamp(tone, -0.85f, 0.85f) * 0.45f;
-            }
-            else
-            {
-                samples[i] = 0f;
-            }
+            float freq = (t < 0.5f) ? 880f : 660f;
+            float tone = Mathf.Sin(2f * Mathf.PI * freq * t) * 0.7f + Mathf.Sin(2f * Mathf.PI * (freq * 2f) * t) * 0.3f;
+            samples[i] = Mathf.Clamp(tone, -0.88f, 0.88f) * 0.5f;
         }
 
-        AudioClip clip = AudioClip.Create("FireAlarmAudio", sampleCount, 1, sampleRate, false);
+        AudioClip clip = AudioClip.Create("IndustrialFireAlarm", sampleCount, 1, sampleRate, false);
         clip.SetData(samples, 0);
         return clip;
     }
@@ -877,19 +1104,38 @@ public class FireSafetyManager : MonoBehaviour
         {
             GameObject es = new GameObject("EventSystem");
             es.AddComponent<EventSystem>();
-            es.AddComponent<StandaloneInputModule>();
+
+            System.Type inputSystemType = System.Type.GetType("UnityEngine.InputSystem.UI.InputSystemUIInputModule, Unity.InputSystem");
+            if (inputSystemType != null)
+            {
+                es.AddComponent(inputSystemType);
+            }
+            else
+            {
+                es.AddComponent<StandaloneInputModule>();
+            }
         }
     }
 
     private void EnsurePhysicsRaycaster()
     {
-        if (Camera.main != null && Camera.main.GetComponent<PhysicsRaycaster>() == null)
+        if (Camera.main != null)
         {
-            Camera.main.gameObject.AddComponent<PhysicsRaycaster>();
+            if (Camera.main.GetComponent<PhysicsRaycaster>() == null)
+            {
+                Camera.main.gameObject.AddComponent<PhysicsRaycaster>();
+            }
+
+            #if UNITY_EDITOR
+            var arBg = Camera.main.GetComponent<UnityEngine.XR.ARFoundation.ARCameraBackground>();
+            if (arBg != null)
+            {
+                arBg.enabled = false;
+            }
+            #endif
         }
     }
 
-    // Fixed font fetcher: safely uses non-generic GetBuiltinResource
     private Font GetUniversalFont()
     {
         Font f = (Font)Resources.GetBuiltinResource(typeof(Font), "LegacyRuntime.ttf");
@@ -968,8 +1214,8 @@ public class FireSafetyManager : MonoBehaviour
     private Texture2D GenerateTileTexture(int size)
     {
         Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
-        Color baseCol = new Color(0.72f, 0.72f, 0.73f);
-        Color seamCol = new Color(0.48f, 0.48f, 0.50f);
+        Color baseCol = new Color(0.7f, 0.7f, 0.72f);
+        Color seamCol = new Color(0.44f, 0.44f, 0.46f);
 
         for (int y = 0; y < size; y++)
         {
@@ -1028,10 +1274,10 @@ public class FireSafetyManager : MonoBehaviour
         Gradient grad = new Gradient();
         grad.SetKeys(
             new GradientColorKey[] {
-                new GradientColorKey(new Color(1f, 0.95f, 0.6f), 0f),
-                new GradientColorKey(new Color(1f, 0.52f, 0.02f), 0.3f),
-                new GradientColorKey(new Color(0.92f, 0.12f, 0f), 0.72f),
-                new GradientColorKey(new Color(0.18f, 0.02f, 0.02f), 1f)
+                new GradientColorKey(new Color(1f, 0.95f, 0.6f), 0f),   // Incandescent core
+                new GradientColorKey(new Color(1f, 0.50f, 0.02f), 0.3f), // Orange blaze
+                new GradientColorKey(new Color(0.92f, 0.12f, 0f), 0.72f),// Intense red
+                new GradientColorKey(new Color(0.18f, 0.02f, 0.02f), 1f) // Dark tip
             },
             new GradientAlphaKey[] {
                 new GradientAlphaKey(0f, 0f),
@@ -1058,6 +1304,29 @@ public class FireSafetyManager : MonoBehaviour
             }
         );
         return grad;
+    }
+}
+
+// =========================================================================
+// INTERACTIVE 3D DOOR CLICK HANDLER (SAFE vs DAMAGED EXIT)
+// =========================================================================
+public class DoorClickHandler : MonoBehaviour, IPointerClickHandler
+{
+    private FireSafetyManager manager;
+    private bool isSafeDoor;
+
+    public void Init(FireSafetyManager mgr, bool safe)
+    {
+        manager = mgr;
+        isSafeDoor = safe;
+    }
+
+    public void OnPointerClick(PointerEventData eventData)
+    {
+        if (manager != null)
+        {
+            manager.OnDoorClicked(isSafeDoor);
+        }
     }
 }
 
