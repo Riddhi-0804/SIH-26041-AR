@@ -42,6 +42,7 @@ public class FireSafetyManager : MonoBehaviour
     private Light fireLight;
     private Light sparkArcLight;
     private AudioSource alarmSource;
+    private Camera activeCam; // Cached camera used to place the hand-held extinguisher
 
     // Auto-Generated UI
     private Canvas uiCanvas;
@@ -65,6 +66,7 @@ public class FireSafetyManager : MonoBehaviour
     {
         EnsureEventSystem();
         EnsurePhysicsRaycaster();
+        SetCameraSolidBackground();
         BuildRoomCircuitBoardAndDoors();
         BuildTallFlamesAndHeavySmoke();
         Build3DExtinguisher();
@@ -106,6 +108,42 @@ public class FireSafetyManager : MonoBehaviour
                 StartEvacuationStage();
             }
         }
+
+        // Keep the extinguisher glued in front of the camera every frame while it's
+        // in play. Positioning it only once (at the moment the minigame starts) is
+        // what made it go missing on phones: on many devices/AR setups Camera.main
+        // isn't guaranteed to be settled or on the same GameObject a frame later, so
+        // a one-shot placement can land the extinguisher off-frame with nothing
+        // afterward to correct it.
+        if (extinguisherRoot != null && extinguisherRoot.activeSelf)
+        {
+            Camera cam = GetActiveCamera();
+            if (cam != null)
+            {
+                extinguisherRoot.transform.position = cam.transform.position
+                    + cam.transform.forward * 0.6f
+                    - cam.transform.up * 0.18f
+                    + cam.transform.right * 0.12f;
+                extinguisherRoot.transform.rotation = cam.transform.rotation;
+            }
+        }
+    }
+
+    // Camera.main can be null or momentarily stale on some phone/AR setups
+    // (untagged rig camera, camera swapped after session start, etc.). Fall back
+    // to any active camera in the scene so the extinguisher never ends up
+    // positioned relative to a null reference.
+    private Camera GetActiveCamera()
+    {
+        if (activeCam == null || !activeCam.isActiveAndEnabled)
+        {
+            activeCam = Camera.main;
+        }
+        if (activeCam == null)
+        {
+            activeCam = FindObjectOfType<Camera>();
+        }
+        return activeCam;
     }
 
     // =========================================================================
@@ -195,9 +233,14 @@ public class FireSafetyManager : MonoBehaviour
         if (extinguisherRoot != null)
         {
             extinguisherRoot.SetActive(true);
-            if (Camera.main != null)
+            Camera cam = GetActiveCamera();
+            if (cam != null)
             {
-                extinguisherRoot.transform.position = Camera.main.transform.position + Camera.main.transform.forward * 0.85f - Camera.main.transform.up * 0.22f;
+                extinguisherRoot.transform.position = cam.transform.position
+                    + cam.transform.forward * 0.6f
+                    - cam.transform.up * 0.18f
+                    + cam.transform.right * 0.12f;
+                extinguisherRoot.transform.rotation = cam.transform.rotation;
             }
         }
 
@@ -803,13 +846,13 @@ public class FireSafetyManager : MonoBehaviour
         Material blackMat = CreateSolidMaterial(solidShader, new Color(0.15f, 0.15f, 0.16f));
         Material brassMat = CreateSolidMaterial(solidShader, new Color(0.8f, 0.65f, 0.25f));
 
-        CreateSubCylinder(extinguisherRoot.transform, Vector3.zero, new Vector3(0.14f, 0.28f, 0.14f), redMat, Vector3.zero);
-        CreateSubCylinder(extinguisherRoot.transform, new Vector3(0, 0.30f, 0), new Vector3(0.05f, 0.04f, 0.05f), brassMat, Vector3.zero);
-        CreateSubCube(extinguisherRoot.transform, new Vector3(0, 0.35f, -0.04f), new Vector3(0.02f, 0.08f, 0.12f), blackMat);
-        CreateSubCylinder(extinguisherRoot.transform, new Vector3(0.08f, 0.18f, 0.12f), new Vector3(0.06f, 0.15f, 0.06f), blackMat, new Vector3(45f, 0, 0));
+        CreateSubCylinder(extinguisherRoot.transform, Vector3.zero, new Vector3(0.18f, 0.36f, 0.18f), redMat, Vector3.zero);
+        CreateSubCylinder(extinguisherRoot.transform, new Vector3(0, 0.38f, 0), new Vector3(0.065f, 0.05f, 0.065f), brassMat, Vector3.zero);
+        CreateSubCube(extinguisherRoot.transform, new Vector3(0, 0.45f, -0.05f), new Vector3(0.026f, 0.1f, 0.15f), blackMat);
+        CreateSubCylinder(extinguisherRoot.transform, new Vector3(0.1f, 0.23f, 0.15f), new Vector3(0.078f, 0.19f, 0.078f), blackMat, new Vector3(45f, 0, 0));
 
         var col = extinguisherRoot.AddComponent<BoxCollider>();
-        col.size = new Vector3(0.25f, 0.5f, 0.25f);
+        col.size = new Vector3(0.32f, 0.65f, 0.32f);
         extinguisherRoot.AddComponent<Draggable3DExtinguisher>();
 
         Material pMat = new Material(Shader.Find("Sprites/Default")) { mainTexture = GenerateSoftCircleTexture(64) };
@@ -848,7 +891,15 @@ public class FireSafetyManager : MonoBehaviour
         GameObject canvasObj = new GameObject("Simulation_Canvas");
         uiCanvas = canvasObj.AddComponent<Canvas>();
         uiCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
-        canvasObj.AddComponent<CanvasScaler>().uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        CanvasScaler scaler = canvasObj.AddComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        // Tuned for portrait phones. Without this, the default 800x600
+        // reference plus "match width" scaling makes text wrap differently
+        // on tall narrow screens than it does on desktop, which is what was
+        // pushing the description text down into the answer buttons.
+        scaler.referenceResolution = new Vector2(1080f, 1920f);
+        scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+        scaler.matchWidthOrHeight = 0.5f;
         canvasObj.AddComponent<GraphicRaycaster>();
 
         Font defaultFont = GetUniversalFont();
@@ -885,7 +936,7 @@ public class FireSafetyManager : MonoBehaviour
         RectTransform qcRT = questionCard.GetComponent<RectTransform>();
         qcRT.anchorMin = new Vector2(0.5f, 0.5f);
         qcRT.anchorMax = new Vector2(0.5f, 0.5f);
-        qcRT.sizeDelta = new Vector2(620f, 360f);
+        qcRT.sizeDelta = new Vector2(620f, 460f); // Taller to give every section its own clear space
 
         // Title
         GameObject titleObj = new GameObject("QTitle");
@@ -896,30 +947,35 @@ public class FireSafetyManager : MonoBehaviour
         questionTitleText.fontStyle = FontStyle.Bold;
         questionTitleText.color = new Color(1f, 0.8f, 0.2f);
         questionTitleText.alignment = TextAnchor.MiddleCenter;
+        questionTitleText.horizontalOverflow = HorizontalWrapMode.Wrap;
+        questionTitleText.verticalOverflow = VerticalWrapMode.Truncate;
         RectTransform titleRT = titleObj.GetComponent<RectTransform>();
         titleRT.anchorMin = new Vector2(0, 1);
         titleRT.anchorMax = new Vector2(1, 1);
         titleRT.pivot = new Vector2(0.5f, 1f);
-        titleRT.anchoredPosition = new Vector2(0, -15f);
-        titleRT.sizeDelta = new Vector2(-40f, 35f);
+        titleRT.anchoredPosition = new Vector2(0, -20f);
+        titleRT.sizeDelta = new Vector2(-40f, 40f);
 
         // Description
         GameObject descObj = new GameObject("QDesc");
         descObj.transform.SetParent(questionCard.transform, false);
         questionDescText = descObj.AddComponent<Text>();
         questionDescText.font = defaultFont;
-        questionDescText.fontSize = 15;
+        questionDescText.fontSize = 14;
         questionDescText.color = new Color(0.9f, 0.9f, 0.9f);
-        questionDescText.alignment = TextAnchor.MiddleCenter;
+        questionDescText.alignment = TextAnchor.UpperCenter;
+        questionDescText.horizontalOverflow = HorizontalWrapMode.Wrap;
+        questionDescText.verticalOverflow = VerticalWrapMode.Truncate; // Never overflow into the buttons below
         RectTransform descRT = descObj.GetComponent<RectTransform>();
         descRT.anchorMin = new Vector2(0, 1);
         descRT.anchorMax = new Vector2(1, 1);
         descRT.pivot = new Vector2(0.5f, 1f);
-        descRT.anchoredPosition = new Vector2(0, -55f);
-        descRT.sizeDelta = new Vector2(-40f, 45f);
+        descRT.anchoredPosition = new Vector2(0, -70f);
+        descRT.sizeDelta = new Vector2(-50f, 100f); // Enough height for 4-5 wrapped lines on a narrow phone
 
         // 3 Option Buttons
-        float buttonYStart = -120f;
+        float buttonYStart = -195f; // Clear gap below the (taller) description block
+        float buttonSpacing = 74f;  // Extra room between buttons so they never touch
         for (int i = 0; i < 3; i++)
         {
             GameObject btnObj = new GameObject("OptionBtn_" + i);
@@ -934,7 +990,7 @@ public class FireSafetyManager : MonoBehaviour
             btnRT.anchorMax = new Vector2(0.5f, 1f);
             btnRT.pivot = new Vector2(0.5f, 1f);
             btnRT.sizeDelta = new Vector2(560f, 55f);
-            btnRT.anchoredPosition = new Vector2(0, buttonYStart - i * 65f);
+            btnRT.anchoredPosition = new Vector2(0, buttonYStart - i * buttonSpacing);
 
             GameObject btnTextObj = new GameObject("BtnText");
             btnTextObj.transform.SetParent(btnObj.transform, false);
@@ -944,12 +1000,14 @@ public class FireSafetyManager : MonoBehaviour
             btnText.fontStyle = FontStyle.Bold;
             btnText.color = Color.white;
             btnText.alignment = TextAnchor.MiddleCenter;
+            btnText.horizontalOverflow = HorizontalWrapMode.Wrap;
+            btnText.verticalOverflow = VerticalWrapMode.Truncate;
             optionButtonTexts[i] = btnText;
 
             RectTransform btTextRT = btnTextObj.GetComponent<RectTransform>();
             btTextRT.anchorMin = Vector2.zero;
             btTextRT.anchorMax = Vector2.one;
-            btTextRT.sizeDelta = Vector2.zero;
+            btTextRT.sizeDelta = new Vector2(-16f, 0f); // Small horizontal padding so text doesn't touch button edges
         }
 
         // Minigame Extinguish HUD
@@ -1133,6 +1191,19 @@ public class FireSafetyManager : MonoBehaviour
                 arBg.enabled = false;
             }
             #endif
+        }
+    }
+
+    // Replaces the default skybox (which renders as a yellow/orange
+    // horizon-and-sun gradient) with a flat dark background that suits
+    // the fire/smoke scene. Skip this if the project uses AR Foundation
+    // camera passthrough, since Solid Color would hide the live feed too.
+    private void SetCameraSolidBackground()
+    {
+        if (Camera.main != null)
+        {
+            Camera.main.clearFlags = CameraClearFlags.SolidColor;
+            Camera.main.backgroundColor = new Color(0.02f, 0.02f, 0.03f);
         }
     }
 
