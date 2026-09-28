@@ -1,6 +1,8 @@
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
+using UnityEngine.Networking;
+using System.Collections;
 
 public class FireSafetyManager : MonoBehaviour
 {
@@ -68,6 +70,19 @@ public class FireSafetyManager : MonoBehaviour
     private int workerMarks = 100;
     private Text scoreText;
 
+    // Main-app integration settings. Set these in the Inspector or replace
+    // the defaults with your real backend URL and registered app scheme.
+    [Header("Main App Deep-Link Integration")]
+    [Tooltip("POST endpoint that accepts the completed worker score. Leave empty to skip the API call.")]
+    [SerializeField] private string scoreApiEndpoint = "https://YOUR-BACKEND.example.com/api/training-scores";
+    [Tooltip("Custom URL scheme registered by the main app, for example mainapp.")]
+    [SerializeField] private string mainAppScheme = "mainapp";
+    [SerializeField] private bool returnToMainAppAfterCompletion = true;
+
+    private string participantId = "";
+    private string sessionId = "";
+    private bool scoreSubmissionStarted = false;
+
     void Awake()
     {
         EnsureEventSystem();
@@ -75,6 +90,12 @@ public class FireSafetyManager : MonoBehaviour
 
     void Start()
     {
+        Application.deepLinkActivated += HandleIncomingDeepLink;
+        if (!string.IsNullOrEmpty(Application.absoluteURL))
+        {
+            HandleIncomingDeepLink(Application.absoluteURL);
+        }
+
         // Building the room/doors/fire here (rather than Awake) matters on
         // phone/AR builds: Awake can run before the device camera is fully
         // ready or tagged "MainCamera", which was silently placing the whole
@@ -92,6 +113,11 @@ public class FireSafetyManager : MonoBehaviour
         BuildProceduralUI();
         BuildAlarmAudio();
         StartPPEQuestion();
+    }
+
+    void OnDestroy()
+    {
+        Application.deepLinkActivated -= HandleIncomingDeepLink;
     }
 
     void Update()
@@ -321,6 +347,94 @@ public class FireSafetyManager : MonoBehaviour
                 : new Color(1f, 0.8f, 0.2f);
         }
         if (successCard != null) successCard.SetActive(true);
+
+        // Save the verified result, then return the worker to the main app.
+        if (!scoreSubmissionStarted)
+        {
+            scoreSubmissionStarted = true;
+            StartCoroutine(SaveScoreAndReturnToMainApp());
+        }
+    }
+
+    // Example launch URL from the main app:
+    // artraining://start?participantId=worker123&sessionId=session456
+    private void HandleIncomingDeepLink(string url)
+    {
+        if (string.IsNullOrEmpty(url)) return;
+
+        participantId = GetQueryValue(url, "participantId");
+        sessionId = GetQueryValue(url, "sessionId");
+        Debug.Log("AR training deep link received. participantId=" + participantId + ", sessionId=" + sessionId);
+    }
+
+    private string GetQueryValue(string url, string key)
+    {
+        int questionMark = url.IndexOf('?');
+        if (questionMark < 0) return "";
+
+        string query = url.Substring(questionMark + 1);
+        string[] pairs = query.Split('&');
+        for (int i = 0; i < pairs.Length; i++)
+        {
+            string[] parts = pairs[i].Split(new char[] { '=' }, 2);
+            if (parts.Length == 2 && parts[0] == key)
+            {
+                return UnityWebRequest.UnEscapeURL(parts[1]);
+            }
+        }
+        return "";
+    }
+
+    private IEnumerator SaveScoreAndReturnToMainApp()
+    {
+        ScoreSubmission payload = new ScoreSubmission
+        {
+            participantId = participantId,
+            sessionId = sessionId,
+            score = workerMarks,
+            maximumScore = 100
+        };
+
+        bool saved = false;
+        if (!string.IsNullOrEmpty(scoreApiEndpoint)
+            && !scoreApiEndpoint.Contains("YOUR-BACKEND.example.com"))
+        {
+            string json = JsonUtility.ToJson(payload);
+            using (UnityWebRequest request = new UnityWebRequest(scoreApiEndpoint, "POST"))
+            {
+                byte[] body = System.Text.Encoding.UTF8.GetBytes(json);
+                request.uploadHandler = new UploadHandlerRaw(body);
+                request.downloadHandler = new DownloadHandlerBuffer();
+                request.SetRequestHeader("Content-Type", "application/json");
+                yield return request.SendWebRequest();
+                saved = request.result == UnityWebRequest.Result.Success;
+                if (!saved) Debug.LogError("Score upload failed: " + request.error);
+            }
+        }
+        else
+        {
+            Debug.LogWarning("Score API endpoint is still a placeholder; score was not uploaded.");
+        }
+
+        if (returnToMainAppAfterCompletion && !string.IsNullOrEmpty(mainAppScheme))
+        {
+            string resultUrl = mainAppScheme + "://training-result?participantId="
+                + UnityWebRequest.EscapeURL(participantId)
+                + "&sessionId=" + UnityWebRequest.EscapeURL(sessionId)
+                + "&score=" + workerMarks
+                + "&maximumScore=100&saved=" + (saved ? "true" : "false");
+            yield return new WaitForSeconds(1.0f);
+            Application.OpenURL(resultUrl);
+        }
+    }
+
+    [System.Serializable]
+    private class ScoreSubmission
+    {
+        public string participantId;
+        public string sessionId;
+        public int score;
+        public int maximumScore;
     }
 
     public void RestartSimulation()
