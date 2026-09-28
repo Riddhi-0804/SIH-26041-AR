@@ -63,6 +63,11 @@ public class FireSafetyManager : MonoBehaviour
     private float extinguishRate = 0.22f;
     private bool isExtinguishing = false;
 
+    // Worker assessment starts at the maximum 100 marks.
+    // Wrong clicks deduct marks; a later correct answer never restores them.
+    private int workerMarks = 100;
+    private Text scoreText;
+
     void Awake()
     {
         EnsureEventSystem();
@@ -78,6 +83,9 @@ public class FireSafetyManager : MonoBehaviour
         // giving the camera time to be ready.
         EnsurePhysicsRaycaster();
         ConfigureARCameraBackground();
+        // The AR camera can be created/enabled a moment after this object starts.
+        // Retry until ARCameraBackground is available instead of leaving a black feed.
+        InvokeRepeating(nameof(ConfigureARCameraBackground), 0.5f, 1.0f);
         BuildRoomCircuitBoardAndDoors();
         BuildTallFlamesAndHeavySmoke();
         Build3DExtinguisher();
@@ -161,6 +169,7 @@ public class FireSafetyManager : MonoBehaviour
     {
         currentState = SimState.Question_PPE;
         isExtinguishing = false;
+        workerMarks = 100;
         fireHealth = 1f;
         ApplyFireHealth(1f);
 
@@ -168,64 +177,76 @@ public class FireSafetyManager : MonoBehaviour
         if (successCard != null) successCard.SetActive(false);
         if (minigameHud != null) minigameHud.SetActive(false);
         if (questionCard != null) questionCard.SetActive(true);
+        SetOptionsInteractable(true);
 
         SetBanner("ELECTRICAL SHORT-CIRCUIT FIRE DETECTED!", new Color(0.9f, 0.15f, 0.15f));
         questionTitleText.text = "Step 1: Select Appropriate PPE";
         questionDescText.text = "Broken cables in the distribution board have ignited. What PPE must you equip before approaching?";
 
         SetOption(0, "Class 0 Insulated Rubber Gloves & Arc Flash Face Shield", () => {
-            SetBanner("CORRECT: Insulated gloves & visor protect against high voltage & arc blast.", new Color(0.15f, 0.65f, 0.25f));
+            SetOptionsInteractable(false);
+            SetBanner("CORRECT FIRST CHOICE: Insulated gloves & visor protect against high voltage & arc blast.  30 MARKS RETAINED", new Color(0.15f, 0.65f, 0.25f));
             Invoke(nameof(StartExtinguisherQuestion), 1.4f);
         });
 
         SetOption(1, "Standard Cotton Clothes & Leather Work Gloves", () => {
-            SetBanner("DANGEROUS: Cotton ignites easily and leather provides zero electrical insulation!", new Color(0.8f, 0.2f, 0.2f));
+            workerMarks = Mathf.Max(0, workerMarks - 30);
+            SetBanner("WRONG CHOICE: -30 MARKS. Choose the correct PPE. Current score: " + workerMarks + " / 100", new Color(0.8f, 0.2f, 0.2f));
         });
 
         SetOption(2, "No Gear - Run directly toward the fire with a bucket", () => {
-            SetBanner("FATAL MISTAKE: Approaching live high-voltage fire without PPE leads to electrocution!", new Color(0.85f, 0.1f, 0.1f));
+            workerMarks = Mathf.Max(0, workerMarks - 30);
+            SetBanner("WRONG CHOICE: -30 MARKS. Approaching live high-voltage fire without PPE leads to electrocution! Current score: " + workerMarks + " / 100", new Color(0.85f, 0.1f, 0.1f));
         });
     }
 
     private void StartExtinguisherQuestion()
     {
         currentState = SimState.Question_Extinguisher;
+        SetOptionsInteractable(true);
         SetBanner("STEP 2: SELECT EXTINGUISHER TYPE", new Color(0.9f, 0.55f, 0.1f));
         questionTitleText.text = "Step 2: Choose the Correct Extinguisher";
         questionDescText.text = "Which fire extinguisher is certified and safe for energized electrical equipment?";
 
         SetOption(0, "CO2 (Carbon Dioxide) / Dry Chemical Extinguisher", () => {
-            SetBanner("CORRECT: Non-conductive CO2 gas starves the fire without electrocution risk.", new Color(0.15f, 0.65f, 0.25f));
+            SetOptionsInteractable(false);
+            SetBanner("CORRECT FIRST CHOICE: Non-conductive CO2 gas starves the fire without electrocution risk.  30 MARKS RETAINED", new Color(0.15f, 0.65f, 0.25f));
             Invoke(nameof(StartAimQuestion), 1.4f);
         });
 
         SetOption(1, "Pressurized Water Jet Extinguisher (Class A)", () => {
-            SetBanner("LETHAL ERROR: Water conducts electricity straight back to the operator!", new Color(0.85f, 0.1f, 0.1f));
+            workerMarks = Mathf.Max(0, workerMarks - 30);
+            SetBanner("WRONG CHOICE: -30 MARKS. Water conducts electricity straight back to the operator! Current score: " + workerMarks + " / 100", new Color(0.85f, 0.1f, 0.1f));
         });
 
         SetOption(2, "AFFF Foam Spray Extinguisher", () => {
-            SetBanner("INCORRECT: Foam contains water and creates an electrocution hazard on live circuits!", new Color(0.8f, 0.2f, 0.2f));
+            workerMarks = Mathf.Max(0, workerMarks - 30);
+            SetBanner("WRONG CHOICE: -30 MARKS. Foam contains water and creates an electrocution hazard! Current score: " + workerMarks + " / 100", new Color(0.8f, 0.2f, 0.2f));
         });
     }
 
     private void StartAimQuestion()
     {
         currentState = SimState.Question_Aim;
+        SetOptionsInteractable(true);
         SetBanner("STEP 3: EXTINGUISHER AIM TECHNIQUE (P.A.S.S.)", new Color(0.9f, 0.55f, 0.1f));
         questionTitleText.text = "Step 3: Pointing the Nozzle";
         questionDescText.text = "According to the P.A.S.S. protocol, where must you direct the extinguisher horn?";
 
         SetOption(0, "Aim at the base of the fire & sweep side-to-side", () => {
-            SetBanner("PERFECT: Aiming at the base smothers the burning fuel source directly!", new Color(0.15f, 0.65f, 0.25f));
+            SetOptionsInteractable(false);
+            SetBanner("CORRECT FIRST CHOICE: Aiming at the base smothers the burning fuel source directly!  40 MARKS RETAINED", new Color(0.15f, 0.65f, 0.25f));
             Invoke(nameof(StartMinigame), 1.2f);
         });
 
         SetOption(1, "Aim high directly at the top of the flames", () => {
-            SetBanner("INEFFECTIVE: Gas disperses into the air without smothering the burning fuel.", new Color(0.8f, 0.2f, 0.2f));
+            workerMarks = Mathf.Max(0, workerMarks - 40);
+            SetBanner("WRONG CHOICE: -40 MARKS. Gas disperses into the air without smothering the burning fuel. Current score: " + workerMarks + " / 100", new Color(0.8f, 0.2f, 0.2f));
         });
 
         SetOption(2, "Aim into the smoke column above the fire", () => {
-            SetBanner("WRONG: Extinguishing smoke does not put out the burning cables beneath.", new Color(0.8f, 0.2f, 0.2f));
+            workerMarks = Mathf.Max(0, workerMarks - 40);
+            SetBanner("WRONG CHOICE: -40 MARKS. Extinguishing smoke does not put out the burning cables beneath. Current score: " + workerMarks + " / 100", new Color(0.8f, 0.2f, 0.2f));
         });
     }
 
@@ -292,6 +313,13 @@ public class FireSafetyManager : MonoBehaviour
     private void CompleteSimulation()
     {
         currentState = SimState.Success;
+        if (scoreText != null)
+        {
+            scoreText.text = "WORKER FINAL MARKS: " + workerMarks + " / 100";
+            scoreText.color = workerMarks == 100
+                ? new Color(0.3f, 1f, 0.45f)
+                : new Color(1f, 0.8f, 0.2f);
+        }
         if (successCard != null) successCard.SetActive(true);
     }
 
@@ -311,6 +339,14 @@ public class FireSafetyManager : MonoBehaviour
     {
         if (bannerText != null) bannerText.text = message;
         if (bannerBg != null) bannerBg.color = bgCol;
+    }
+
+    private void SetOptionsInteractable(bool enabled)
+    {
+        for (int i = 0; i < optionButtons.Length; i++)
+        {
+            if (optionButtons[i] != null) optionButtons[i].interactable = enabled;
+        }
     }
 
     private void ApplyFireHealth(float norm)
@@ -923,13 +959,13 @@ public class FireSafetyManager : MonoBehaviour
         bannerRT.anchorMin = new Vector2(0f, 1f);
         bannerRT.anchorMax = new Vector2(1f, 1f);
         bannerRT.pivot = new Vector2(0.5f, 1f);
-        bannerRT.sizeDelta = new Vector2(0, 90f);
+        bannerRT.sizeDelta = new Vector2(0, 110f);
 
         GameObject bannerTextObj = new GameObject("BannerText");
         bannerTextObj.transform.SetParent(bannerObj.transform, false);
         bannerText = bannerTextObj.AddComponent<Text>();
         bannerText.font = defaultFont;
-        bannerText.fontSize = 30;
+        bannerText.fontSize = 36;
         bannerText.fontStyle = FontStyle.Bold;
         bannerText.alignment = TextAnchor.MiddleCenter;
         bannerText.color = Color.white;
@@ -946,14 +982,14 @@ public class FireSafetyManager : MonoBehaviour
         RectTransform qcRT = questionCard.GetComponent<RectTransform>();
         qcRT.anchorMin = new Vector2(0.5f, 0.5f);
         qcRT.anchorMax = new Vector2(0.5f, 0.5f);
-        qcRT.sizeDelta = new Vector2(700f, 700f); // Extra height to fit the larger, more legible fonts
+        qcRT.sizeDelta = new Vector2(740f, 760f); // Extra height to fit the larger, more legible fonts
 
         // Title
         GameObject titleObj = new GameObject("QTitle");
         titleObj.transform.SetParent(questionCard.transform, false);
         questionTitleText = titleObj.AddComponent<Text>();
         questionTitleText.font = defaultFont;
-        questionTitleText.fontSize = 32;
+        questionTitleText.fontSize = 36;
         questionTitleText.fontStyle = FontStyle.Bold;
         questionTitleText.color = new Color(1f, 0.8f, 0.2f);
         questionTitleText.alignment = TextAnchor.MiddleCenter;
@@ -964,14 +1000,14 @@ public class FireSafetyManager : MonoBehaviour
         titleRT.anchorMax = new Vector2(1, 1);
         titleRT.pivot = new Vector2(0.5f, 1f);
         titleRT.anchoredPosition = new Vector2(0, -20f);
-        titleRT.sizeDelta = new Vector2(-40f, 58f);
+        titleRT.sizeDelta = new Vector2(-40f, 72f);
 
         // Description
         GameObject descObj = new GameObject("QDesc");
         descObj.transform.SetParent(questionCard.transform, false);
         questionDescText = descObj.AddComponent<Text>();
         questionDescText.font = defaultFont;
-        questionDescText.fontSize = 23;
+        questionDescText.fontSize = 27;
         questionDescText.color = new Color(0.9f, 0.9f, 0.9f);
         questionDescText.alignment = TextAnchor.UpperCenter;
         questionDescText.horizontalOverflow = HorizontalWrapMode.Wrap;
@@ -980,12 +1016,12 @@ public class FireSafetyManager : MonoBehaviour
         descRT.anchorMin = new Vector2(0, 1);
         descRT.anchorMax = new Vector2(1, 1);
         descRT.pivot = new Vector2(0.5f, 1f);
-        descRT.anchoredPosition = new Vector2(0, -74f);
-        descRT.sizeDelta = new Vector2(-50f, 145f); // Enough height for 4-5 wrapped lines at the larger font size
+        descRT.anchoredPosition = new Vector2(0, -92f);
+        descRT.sizeDelta = new Vector2(-50f, 175f); // Enough height for 4-5 wrapped lines at the larger font size
 
         // 3 Option Buttons
-        float buttonYStart = -190f; // Clear gap below the (taller) description block
-        float buttonSpacing = 145f;  // Large vertical gaps for reliable mobile taps
+        float buttonYStart = -210f; // Clear gap below the (taller) description block
+        float buttonSpacing = 155f;  // Large vertical gaps for reliable mobile taps
         for (int i = 0; i < 3; i++)
         {
             GameObject btnObj = new GameObject("OptionBtn_" + i);
@@ -999,14 +1035,14 @@ public class FireSafetyManager : MonoBehaviour
             btnRT.anchorMin = new Vector2(0.5f, 1f);
             btnRT.anchorMax = new Vector2(0.5f, 1f);
             btnRT.pivot = new Vector2(0.5f, 1f);
-            btnRT.sizeDelta = new Vector2(620f, 125f);
+            btnRT.sizeDelta = new Vector2(660f, 135f);
             btnRT.anchoredPosition = new Vector2(0, buttonYStart - i * buttonSpacing);
 
             GameObject btnTextObj = new GameObject("BtnText");
             btnTextObj.transform.SetParent(btnObj.transform, false);
             Text btnText = btnTextObj.AddComponent<Text>();
             btnText.font = defaultFont;
-            btnText.fontSize = 27;
+            btnText.fontSize = 30;
             btnText.fontStyle = FontStyle.Bold;
             btnText.color = Color.white;
             btnText.alignment = TextAnchor.MiddleCenter;
@@ -1028,7 +1064,7 @@ public class FireSafetyManager : MonoBehaviour
         mgRT.anchorMax = new Vector2(0.5f, 0f);
         mgRT.pivot = new Vector2(0.5f, 0f);
         mgRT.anchoredPosition = new Vector2(0, 30f);
-        mgRT.sizeDelta = new Vector2(500f, 90f);
+        mgRT.sizeDelta = new Vector2(620f, 120f);
 
         Image mgBg = minigameHud.AddComponent<Image>();
         mgBg.color = new Color(0.1f, 0.12f, 0.15f, 0.9f);
@@ -1040,7 +1076,7 @@ public class FireSafetyManager : MonoBehaviour
         fireHealthBar.maxValue = 1f;
         fireHealthBar.value = 1f;
         RectTransform slRT = sliderObj.GetComponent<RectTransform>();
-        slRT.sizeDelta = new Vector2(440f, 25f);
+        slRT.sizeDelta = new Vector2(540f, 32f);
         slRT.anchoredPosition = new Vector2(0, -10f);
 
         GameObject fillObj = new GameObject("Fill");
@@ -1055,14 +1091,14 @@ public class FireSafetyManager : MonoBehaviour
         hudTextObj.transform.SetParent(minigameHud.transform, false);
         Text hudText = hudTextObj.AddComponent<Text>();
         hudText.font = defaultFont;
-        hudText.fontSize = 23;
+        hudText.fontSize = 27;
         hudText.fontStyle = FontStyle.Bold;
         hudText.color = Color.white;
         hudText.alignment = TextAnchor.MiddleCenter;
         hudText.text = "EXTINGUISHING FIRE (Drag Extinguisher over fire base)";
         RectTransform htRT = hudTextObj.GetComponent<RectTransform>();
         htRT.anchoredPosition = new Vector2(0, 20f);
-        htRT.sizeDelta = new Vector2(480f, 30f);
+        htRT.sizeDelta = new Vector2(590f, 45f);
 
         minigameHud.SetActive(false);
 
@@ -1074,32 +1110,46 @@ public class FireSafetyManager : MonoBehaviour
         RectTransform sRT = successCard.GetComponent<RectTransform>();
         sRT.anchorMin = new Vector2(0.5f, 0.5f);
         sRT.anchorMax = new Vector2(0.5f, 0.5f);
-        sRT.sizeDelta = new Vector2(520f, 270f);
+        sRT.sizeDelta = new Vector2(680f, 400f);
 
         GameObject sTitleObj = new GameObject("STitle");
         sTitleObj.transform.SetParent(successCard.transform, false);
         Text sTitle = sTitleObj.AddComponent<Text>();
         sTitle.font = defaultFont;
-        sTitle.fontSize = 34;
+        sTitle.fontSize = 40;
         sTitle.fontStyle = FontStyle.Bold;
         sTitle.color = new Color(0.3f, 1f, 0.45f);
         sTitle.alignment = TextAnchor.MiddleCenter;
         sTitle.text = "EVACUATION COMPLETE!";
         RectTransform stRT = sTitleObj.GetComponent<RectTransform>();
-        stRT.anchoredPosition = new Vector2(0, 65f);
-        stRT.sizeDelta = new Vector2(480f, 40f);
+        stRT.anchoredPosition = new Vector2(0, 135f);
+        stRT.sizeDelta = new Vector2(620f, 60f);
 
         GameObject sDescObj = new GameObject("SDesc");
         sDescObj.transform.SetParent(successCard.transform, false);
         Text sDesc = sDescObj.AddComponent<Text>();
         sDesc.font = defaultFont;
-        sDesc.fontSize = 23;
+        sDesc.fontSize = 26;
         sDesc.color = Color.white;
         sDesc.alignment = TextAnchor.MiddleCenter;
         sDesc.text = "Training successful!\nYou equipped proper PPE, deployed CO2, aimed at the fuel base, and identified the safe, undamaged emergency exit to escape!";
         RectTransform sdRT = sDescObj.GetComponent<RectTransform>();
-        sdRT.anchoredPosition = new Vector2(0, 10f);
-        sdRT.sizeDelta = new Vector2(460f, 65f);
+        sdRT.anchoredPosition = new Vector2(0, 45f);
+        sdRT.sizeDelta = new Vector2(600f, 105f);
+
+        // Final worker marks, shown after the evacuation is completed.
+        GameObject scoreObj = new GameObject("WorkerFinalMarks");
+        scoreObj.transform.SetParent(successCard.transform, false);
+        scoreText = scoreObj.AddComponent<Text>();
+        scoreText.font = defaultFont;
+        scoreText.fontSize = 32;
+        scoreText.fontStyle = FontStyle.Bold;
+        scoreText.color = new Color(1f, 0.8f, 0.2f);
+        scoreText.alignment = TextAnchor.MiddleCenter;
+        scoreText.text = "WORKER FINAL MARKS: 0 / 100";
+        RectTransform scoreRT = scoreObj.GetComponent<RectTransform>();
+        scoreRT.anchoredPosition = new Vector2(0, -75f);
+        scoreRT.sizeDelta = new Vector2(620f, 55f);
 
         // Restart Button
         GameObject rBtnObj = new GameObject("RestartBtn");
@@ -1109,14 +1159,14 @@ public class FireSafetyManager : MonoBehaviour
         Button rBtn = rBtnObj.AddComponent<Button>();
         rBtn.onClick.AddListener(RestartSimulation);
         RectTransform rbRT = rBtnObj.GetComponent<RectTransform>();
-        rbRT.anchoredPosition = new Vector2(0, -65f);
-        rbRT.sizeDelta = new Vector2(240f, 50f);
+        rbRT.anchoredPosition = new Vector2(0, -145f);
+        rbRT.sizeDelta = new Vector2(300f, 70f);
 
         GameObject rTextObj = new GameObject("RText");
         rTextObj.transform.SetParent(rBtnObj.transform, false);
         Text rText = rTextObj.AddComponent<Text>();
         rText.font = defaultFont;
-        rText.fontSize = 24;
+        rText.fontSize = 28;
         rText.fontStyle = FontStyle.Bold;
         rText.color = Color.white;
         rText.alignment = TextAnchor.MiddleCenter;
@@ -1194,13 +1244,6 @@ public class FireSafetyManager : MonoBehaviour
                 Camera.main.gameObject.AddComponent<PhysicsRaycaster>();
             }
 
-            #if UNITY_EDITOR
-            var arBg = Camera.main.GetComponent<UnityEngine.XR.ARFoundation.ARCameraBackground>();
-            if (arBg != null)
-            {
-                arBg.enabled = false;
-            }
-            #endif
         }
     }
 
@@ -1212,18 +1255,28 @@ public class FireSafetyManager : MonoBehaviour
         Camera cam = GetActiveCamera();
         if (cam == null) return;
 
-        var arBg = cam.GetComponent<UnityEngine.XR.ARFoundation.ARCameraBackground>();
-        if (arBg != null)
+        // ARCameraBackground is the component that draws the device camera feed.
+        // Add it if it was omitted from the XR Origin camera, then keep it enabled.
+        var arManager = cam.GetComponent<UnityEngine.XR.ARFoundation.ARCameraManager>();
+        if (arManager == null)
         {
-            arBg.enabled = true;
-            cam.clearFlags = CameraClearFlags.SolidColor;
-            cam.backgroundColor = Color.black;
-            return;
+            arManager = cam.gameObject.AddComponent<UnityEngine.XR.ARFoundation.ARCameraManager>();
         }
 
-        Debug.LogWarning("ARCameraBackground is missing on the AR camera. Add ARCameraManager and ARCameraBackground to the camera, then make sure the camera is tagged MainCamera.");
+        var arBg = cam.GetComponent<UnityEngine.XR.ARFoundation.ARCameraBackground>();
+        if (arBg == null)
+        {
+            arBg = cam.gameObject.AddComponent<UnityEngine.XR.ARFoundation.ARCameraBackground>();
+        }
+        arBg.enabled = true;
+
+        // SolidColor is the required clear mode for ARCameraBackground; the AR
+        // background provider renders the live camera texture before the scene.
         cam.clearFlags = CameraClearFlags.SolidColor;
-        cam.backgroundColor = new Color(0.02f, 0.02f, 0.03f);
+        cam.backgroundColor = Color.black;
+
+        // Stop retrying once the live-background component is ready.
+        CancelInvoke(nameof(ConfigureARCameraBackground));
     }
 
     private Font GetUniversalFont()
