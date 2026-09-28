@@ -62,7 +62,7 @@ public class FireSafetyManager : MonoBehaviour
 
     // Extinguish Progress
     private float fireHealth = 1f;
-    private float extinguishRate = 0.22f;
+    private float extinguishRate = 0.10f;
     private bool isExtinguishing = false;
 
     // Worker assessment starts at the maximum 100 marks.
@@ -164,7 +164,7 @@ public class FireSafetyManager : MonoBehaviour
             if (cam != null)
             {
                 extinguisherRoot.transform.position = cam.transform.position
-                    + cam.transform.forward * 0.6f
+                    + cam.transform.forward * 0.75f
                     - cam.transform.up * 0.18f
                     + cam.transform.right * 0.12f;
             }
@@ -180,6 +180,14 @@ public class FireSafetyManager : MonoBehaviour
         if (activeCam == null || !activeCam.isActiveAndEnabled)
         {
             activeCam = Camera.main;
+        }
+        if (activeCam == null)
+        {
+            var arCameraManager = FindObjectOfType<UnityEngine.XR.ARFoundation.ARCameraManager>();
+            if (arCameraManager != null)
+            {
+                activeCam = arCameraManager.GetComponent<Camera>();
+            }
         }
         if (activeCam == null)
         {
@@ -293,7 +301,7 @@ public class FireSafetyManager : MonoBehaviour
             if (cam != null)
             {
                 extinguisherRoot.transform.position = cam.transform.position
-                    + cam.transform.forward * 0.6f
+                    + cam.transform.forward * 0.75f
                     - cam.transform.up * 0.18f
                     + cam.transform.right * 0.12f;
                 extinguisherRoot.transform.rotation = cam.transform.rotation;
@@ -468,8 +476,8 @@ public class FireSafetyManager : MonoBehaviour
         boardFlamesEmission.rateOverTime = 140f * norm;
         floorFlamesEmission.rateOverTime = 180f * norm;
         electricalCoreEmission.rateOverTime = 100f * norm;
-        heavyFloorSmokeEmission.rateOverTime = 95f * (norm > 0.01f ? (0.35f + norm * 0.65f) : 0f);
-        boardSmokeEmission.rateOverTime = 55f * (norm > 0.01f ? (0.3f + norm * 0.7f) : 0f);
+        heavyFloorSmokeEmission.rateOverTime = 32f * (norm > 0.01f ? (0.35f + norm * 0.65f) : 0f);
+        boardSmokeEmission.rateOverTime = 20f * (norm > 0.01f ? (0.3f + norm * 0.7f) : 0f);
         wallSparksEmission.rateOverTime = 55f * (norm * norm);
         moltenDripsEmission.rateOverTime = 18f * (norm * norm);
 
@@ -649,27 +657,39 @@ public class FireSafetyManager : MonoBehaviour
         // -------------------------------------------------------------
         // BUILD INTERACTIVE EXIT DOORS (1 DAMAGED, 1 SAFE)
         // -------------------------------------------------------------
-        Material safeDoorMat = CreateSolidMaterial(solidShader, new Color(0.85f, 0.86f, 0.88f));
+        Material safeDoorMat = CreateSolidMaterial(solidShader, new Color(0.95f, 0.97f, 1.0f));
         Material burntDoorMat = CreateSolidMaterial(solidShader, new Color(0.12f, 0.10f, 0.09f));
         Material exitSignMat = CreateSolidMaterial(solidShader, new Color(0.15f, 0.85f, 0.25f)); // Glowing Green
         Material blockedSignMat = CreateSolidMaterial(solidShader, new Color(0.85f, 0.15f, 0.15f)); // Glowing Red
 
+        // Place exits relative to the active camera, not world +Z. This keeps
+        // both doors in view even when the phone is rotated in AR.
+        Vector3 viewForward = Vector3.forward;
+        Vector3 viewRight = Vector3.right;
+        if (roomCam != null)
+        {
+            viewForward = Vector3.ProjectOnPlane(roomCam.transform.forward, Vector3.up).normalized;
+            viewRight = Vector3.ProjectOnPlane(roomCam.transform.right, Vector3.up).normalized;
+        }
+
         // Door A: DAMAGED / BLOCKED EXIT (Left side)
-        Vector3 damagedDoorPos = center + new Vector3(-1.05f, 0.18f, 1.45f);
+        Vector3 damagedDoorPos = center + viewRight * -1.05f + viewForward * 1.15f + Vector3.up * 0.18f;
         damagedDoorObj = BuildInteractiveDoor(damagedDoorPos, "DamagedDoor", burntDoorMat, blockedSignMat, false);
+        damagedDoorObj.transform.rotation = Quaternion.LookRotation(-viewForward, Vector3.up);
 
         // Smoke seeping through damaged door cracks
         doorSmokeLeakPS = CreateParticleChild("DoorSmokeLeak", damagedDoorPos + new Vector3(0, -0.7f, -0.03f), pMat, damagedDoorObj.transform);
         var dsmMain = doorSmokeLeakPS.main;
-        dsmMain.startLifetime = new ParticleSystem.MinMaxCurve(1.5f, 2.5f);
+        dsmMain.startLifetime = new ParticleSystem.MinMaxCurve(0.8f, 1.5f);
         dsmMain.startSpeed = new ParticleSystem.MinMaxCurve(0.15f, 0.4f);
-        dsmMain.startSize = new ParticleSystem.MinMaxCurve(0.15f, 0.35f);
+        dsmMain.startSize = new ParticleSystem.MinMaxCurve(0.08f, 0.18f);
         doorSmokeLeakEmission = doorSmokeLeakPS.emission;
-        doorSmokeLeakEmission.rateOverTime = 12f;
+        doorSmokeLeakEmission.rateOverTime = 4f;
 
         // Door B: SAFE EMERGENCY EXIT (Right side)
-        Vector3 safeDoorPos = center + new Vector3(1.05f, 0.18f, 1.45f);
+        Vector3 safeDoorPos = center + viewRight * 1.05f + viewForward * 1.15f + Vector3.up * 0.18f;
         safeDoorObj = BuildInteractiveDoor(safeDoorPos, "SafeExitDoor", safeDoorMat, exitSignMat, true);
+        safeDoorObj.transform.rotation = Quaternion.LookRotation(-viewForward, Vector3.up);
     }
 
     private GameObject BuildInteractiveDoor(Vector3 pos, string name, Material doorMat, Material signMat, bool isSafe)
@@ -684,7 +704,7 @@ public class FireSafetyManager : MonoBehaviour
             GameObject slab = GameObject.CreatePrimitive(PrimitiveType.Cube);
             slab.name = "DoorLeaf";
             slab.transform.SetParent(doorObj.transform, false);
-            slab.transform.localScale = new Vector3(0.75f, 1.75f, 0.04f);
+            slab.transform.localScale = new Vector3(0.95f, 2.0f, 0.08f);
             slab.GetComponent<Renderer>().material = doorMat;
             Destroy(slab.GetComponent<Collider>());
 
@@ -707,13 +727,13 @@ public class FireSafetyManager : MonoBehaviour
         GameObject sign = GameObject.CreatePrimitive(PrimitiveType.Cube);
         sign.transform.SetParent(doorObj.transform, false);
         sign.transform.localPosition = new Vector3(0, 1.02f, -0.02f);
-        sign.transform.localScale = new Vector3(0.45f, 0.14f, 0.05f);
+        sign.transform.localScale = new Vector3(0.68f, 0.20f, 0.06f);
         Destroy(sign.GetComponent<Collider>());
         sign.GetComponent<Renderer>().material = signMat;
 
         // Clickable Trigger Collider & Handler Component
         BoxCollider boxCol = doorObj.AddComponent<BoxCollider>();
-        boxCol.size = new Vector3(0.85f, 2.1f, 0.2f);
+        boxCol.size = new Vector3(1.15f, 2.35f, 0.30f);
         var clicker = doorObj.AddComponent<DoorClickHandler>();
         clicker.Init(this, isSafe);
 
@@ -913,12 +933,12 @@ public class FireSafetyManager : MonoBehaviour
         // --- LAYER 4: A LOT OF MASSIVE BILLOWING BLACK SMOKE (FLOOR + BOARD) ---
         heavyFloorSmokePS = CreateParticleChild("HeavyFloorSmoke", groundCenter + new Vector3(0, 0.7f, 0), pMat, fireRoot.transform);
         var smMain = heavyFloorSmokePS.main;
-        smMain.startLifetime = new ParticleSystem.MinMaxCurve(2.8f, 4.6f);
+        smMain.startLifetime = new ParticleSystem.MinMaxCurve(1.6f, 2.8f);
         smMain.startSpeed = new ParticleSystem.MinMaxCurve(0.8f, 1.8f);
-        smMain.startSize = new ParticleSystem.MinMaxCurve(0.45f, 0.9f);
+        smMain.startSize = new ParticleSystem.MinMaxCurve(0.22f, 0.48f);
         smMain.simulationSpace = ParticleSystemSimulationSpace.World;
         heavyFloorSmokeEmission = heavyFloorSmokePS.emission;
-        heavyFloorSmokeEmission.rateOverTime = 95f; // A LOT of smoke!
+        heavyFloorSmokeEmission.rateOverTime = 32f; // A LOT of smoke!
 
         var smShape = heavyFloorSmokePS.shape;
         smShape.shapeType = ParticleSystemShapeType.Cone;
@@ -937,8 +957,8 @@ public class FireSafetyManager : MonoBehaviour
             },
             new GradientAlphaKey[] {
                 new GradientAlphaKey(0f, 0f),
-                new GradientAlphaKey(0.9f, 0.2f),
-                new GradientAlphaKey(0.7f, 0.7f),
+                new GradientAlphaKey(0.42f, 0.2f),
+                new GradientAlphaKey(0.32f, 0.7f),
                 new GradientAlphaKey(0f, 1f)
             }
         );
@@ -948,8 +968,8 @@ public class FireSafetyManager : MonoBehaviour
         smSize.enabled = true;
         AnimationCurve smCurve = new AnimationCurve();
         smCurve.AddKey(0f, 0.35f);
-        smCurve.AddKey(0.35f, 1.3f);
-        smCurve.AddKey(1f, 3.2f); // Billows broadly across the ceiling
+        smCurve.AddKey(0.35f, 0.8f);
+        smCurve.AddKey(1f, 1.8f); // Billows broadly across the ceiling
         smSize.size = new ParticleSystem.MinMaxCurve(1f, smCurve);
 
         var smNoise = heavyFloorSmokePS.noise;
@@ -959,12 +979,12 @@ public class FireSafetyManager : MonoBehaviour
         // Additional Board Smoke
         boardSmokePS = CreateParticleChild("BoardSmoke", boardFlamesPos + new Vector3(0, 0.3f, 0), pMat, fireRoot.transform);
         var bsmMain = boardSmokePS.main;
-        bsmMain.startLifetime = new ParticleSystem.MinMaxCurve(2.2f, 3.8f);
+        bsmMain.startLifetime = new ParticleSystem.MinMaxCurve(1.2f, 2.2f);
         bsmMain.startSpeed = new ParticleSystem.MinMaxCurve(0.6f, 1.4f);
-        bsmMain.startSize = new ParticleSystem.MinMaxCurve(0.3f, 0.6f);
+        bsmMain.startSize = new ParticleSystem.MinMaxCurve(0.16f, 0.32f);
         bsmMain.simulationSpace = ParticleSystemSimulationSpace.World;
         boardSmokeEmission = boardSmokePS.emission;
-        boardSmokeEmission.rateOverTime = 55f;
+        boardSmokeEmission.rateOverTime = 20f;
 
         // NOTE: shape/colorOverLifetime/sizeOverLifetime are structs returned by
         // value from these properties, so members can't be set directly on the
@@ -1000,9 +1020,10 @@ public class FireSafetyManager : MonoBehaviour
     {
         extinguisherRoot = new GameObject("3D_CO2_Extinguisher");
         extinguisherRoot.transform.SetParent(transform, false);
+        extinguisherRoot.transform.localScale = Vector3.one * 1.45f;
 
         Shader solidShader = GetCompatibleSolidShader();
-        Material redMat = CreateSolidMaterial(solidShader, new Color(0.85f, 0.12f, 0.1f));
+        Material redMat = CreateSolidMaterial(solidShader, new Color(1.0f, 0.04f, 0.02f));
         Material blackMat = CreateSolidMaterial(solidShader, new Color(0.15f, 0.15f, 0.16f));
         Material brassMat = CreateSolidMaterial(solidShader, new Color(0.8f, 0.65f, 0.25f));
 
@@ -1012,7 +1033,7 @@ public class FireSafetyManager : MonoBehaviour
         CreateSubCylinder(extinguisherRoot.transform, new Vector3(0.1f, 0.23f, 0.15f), new Vector3(0.078f, 0.19f, 0.078f), blackMat, new Vector3(45f, 0, 0));
 
         var col = extinguisherRoot.AddComponent<BoxCollider>();
-        col.size = new Vector3(0.32f, 0.65f, 0.32f);
+        col.size = new Vector3(0.52f, 0.95f, 0.52f);
         extinguisherDraggable = extinguisherRoot.AddComponent<Draggable3DExtinguisher>();
 
         Material pMat = new Material(Shader.Find("Sprites/Default")) { mainTexture = GenerateSoftCircleTexture(64) };
@@ -1057,9 +1078,11 @@ public class FireSafetyManager : MonoBehaviour
         // reference plus "match width" scaling makes text wrap differently
         // on tall narrow screens than it does on desktop, which is what was
         // pushing the description text down into the answer buttons.
-        scaler.referenceResolution = new Vector2(1080f, 1920f);
+        scaler.referenceResolution = (Screen.width > Screen.height)
+            ? new Vector2(1920f, 1080f)
+            : new Vector2(1080f, 1920f);
         scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
-        scaler.matchWidthOrHeight = 1f; // Match height only - keeps text a consistent, readable size across different phone aspect ratios
+        scaler.matchWidthOrHeight = 0.5f; // Balanced scaling for landscape and portrait phones
         canvasObj.AddComponent<GraphicRaycaster>();
 
         Font defaultFont = GetUniversalFont();
@@ -1073,13 +1096,13 @@ public class FireSafetyManager : MonoBehaviour
         bannerRT.anchorMin = new Vector2(0f, 1f);
         bannerRT.anchorMax = new Vector2(1f, 1f);
         bannerRT.pivot = new Vector2(0.5f, 1f);
-        bannerRT.sizeDelta = new Vector2(0, 110f);
+        bannerRT.sizeDelta = new Vector2(0, 120f);
 
         GameObject bannerTextObj = new GameObject("BannerText");
         bannerTextObj.transform.SetParent(bannerObj.transform, false);
         bannerText = bannerTextObj.AddComponent<Text>();
         bannerText.font = defaultFont;
-        bannerText.fontSize = 36;
+        bannerText.fontSize = 42;
         bannerText.fontStyle = FontStyle.Bold;
         bannerText.alignment = TextAnchor.MiddleCenter;
         bannerText.color = Color.white;
@@ -1096,14 +1119,14 @@ public class FireSafetyManager : MonoBehaviour
         RectTransform qcRT = questionCard.GetComponent<RectTransform>();
         qcRT.anchorMin = new Vector2(0.5f, 0.5f);
         qcRT.anchorMax = new Vector2(0.5f, 0.5f);
-        qcRT.sizeDelta = new Vector2(740f, 760f); // Extra height to fit the larger, more legible fonts
+        qcRT.sizeDelta = new Vector2(760f, 820f); // Extra height to fit the larger, more legible fonts
 
         // Title
         GameObject titleObj = new GameObject("QTitle");
         titleObj.transform.SetParent(questionCard.transform, false);
         questionTitleText = titleObj.AddComponent<Text>();
         questionTitleText.font = defaultFont;
-        questionTitleText.fontSize = 36;
+        questionTitleText.fontSize = 42;
         questionTitleText.fontStyle = FontStyle.Bold;
         questionTitleText.color = new Color(1f, 0.8f, 0.2f);
         questionTitleText.alignment = TextAnchor.MiddleCenter;
@@ -1114,14 +1137,14 @@ public class FireSafetyManager : MonoBehaviour
         titleRT.anchorMax = new Vector2(1, 1);
         titleRT.pivot = new Vector2(0.5f, 1f);
         titleRT.anchoredPosition = new Vector2(0, -20f);
-        titleRT.sizeDelta = new Vector2(-40f, 72f);
+        titleRT.sizeDelta = new Vector2(-40f, 86f);
 
         // Description
         GameObject descObj = new GameObject("QDesc");
         descObj.transform.SetParent(questionCard.transform, false);
         questionDescText = descObj.AddComponent<Text>();
         questionDescText.font = defaultFont;
-        questionDescText.fontSize = 27;
+        questionDescText.fontSize = 31;
         questionDescText.color = new Color(0.9f, 0.9f, 0.9f);
         questionDescText.alignment = TextAnchor.UpperCenter;
         questionDescText.horizontalOverflow = HorizontalWrapMode.Wrap;
@@ -1130,12 +1153,12 @@ public class FireSafetyManager : MonoBehaviour
         descRT.anchorMin = new Vector2(0, 1);
         descRT.anchorMax = new Vector2(1, 1);
         descRT.pivot = new Vector2(0.5f, 1f);
-        descRT.anchoredPosition = new Vector2(0, -92f);
-        descRT.sizeDelta = new Vector2(-50f, 175f); // Enough height for 4-5 wrapped lines at the larger font size
+        descRT.anchoredPosition = new Vector2(0, -110f);
+        descRT.sizeDelta = new Vector2(-50f, 190f); // Enough height for 4-5 wrapped lines at the larger font size
 
         // 3 Option Buttons
-        float buttonYStart = -210f; // Clear gap below the (taller) description block
-        float buttonSpacing = 155f;  // Large vertical gaps for reliable mobile taps
+        float buttonYStart = -230f; // Clear gap below the (taller) description block
+        float buttonSpacing = 165f;  // Large vertical gaps for reliable mobile taps
         for (int i = 0; i < 3; i++)
         {
             GameObject btnObj = new GameObject("OptionBtn_" + i);
@@ -1149,25 +1172,25 @@ public class FireSafetyManager : MonoBehaviour
             btnRT.anchorMin = new Vector2(0.5f, 1f);
             btnRT.anchorMax = new Vector2(0.5f, 1f);
             btnRT.pivot = new Vector2(0.5f, 1f);
-            btnRT.sizeDelta = new Vector2(660f, 135f);
+            btnRT.sizeDelta = new Vector2(680f, 145f);
             btnRT.anchoredPosition = new Vector2(0, buttonYStart - i * buttonSpacing);
 
             GameObject btnTextObj = new GameObject("BtnText");
             btnTextObj.transform.SetParent(btnObj.transform, false);
             Text btnText = btnTextObj.AddComponent<Text>();
             btnText.font = defaultFont;
-            btnText.fontSize = 30;
+            btnText.fontSize = 34;
             btnText.fontStyle = FontStyle.Bold;
             btnText.color = Color.white;
             btnText.alignment = TextAnchor.MiddleCenter;
             btnText.horizontalOverflow = HorizontalWrapMode.Wrap;
-            btnText.verticalOverflow = VerticalWrapMode.Truncate;
+            btnText.verticalOverflow = VerticalWrapMode.Overflow;
             optionButtonTexts[i] = btnText;
 
             RectTransform btTextRT = btnTextObj.GetComponent<RectTransform>();
             btTextRT.anchorMin = Vector2.zero;
             btTextRT.anchorMax = Vector2.one;
-            btTextRT.sizeDelta = new Vector2(-16f, 0f); // Small horizontal padding so text doesn't touch button edges
+            btTextRT.sizeDelta = new Vector2(-28f, -16f); // Small horizontal padding so text doesn't touch button edges
         }
 
         // Minigame Extinguish HUD
@@ -1371,6 +1394,14 @@ public class FireSafetyManager : MonoBehaviour
 
         // ARCameraBackground is the component that draws the device camera feed.
         // Add it if it was omitted from the XR Origin camera, then keep it enabled.
+        var arSession = FindObjectOfType<UnityEngine.XR.ARFoundation.ARSession>();
+        if (arSession == null)
+        {
+            GameObject sessionObject = new GameObject("AR Session (Auto-Created)");
+            arSession = sessionObject.AddComponent<UnityEngine.XR.ARFoundation.ARSession>();
+        }
+
+        cam.enabled = true;
         var arManager = cam.GetComponent<UnityEngine.XR.ARFoundation.ARCameraManager>();
         if (arManager == null)
         {
@@ -1387,10 +1418,13 @@ public class FireSafetyManager : MonoBehaviour
         // SolidColor is the required clear mode for ARCameraBackground; the AR
         // background provider renders the live camera texture before the scene.
         cam.clearFlags = CameraClearFlags.SolidColor;
-        cam.backgroundColor = Color.black;
+        cam.backgroundColor = new Color(0f, 0f, 0f, 0f);
 
-        // Stop retrying once the live-background component is ready.
-        CancelInvoke(nameof(ConfigureARCameraBackground));
+        // Only stop retrying after the camera subsystem is actually running.
+        if (arManager.subsystem != null && arManager.subsystem.running)
+        {
+            CancelInvoke(nameof(ConfigureARCameraBackground));
+        }
     }
 
     private Font GetUniversalFont()
@@ -1615,7 +1649,7 @@ public class Draggable3DExtinguisher : MonoBehaviour, IDragHandler, IBeginDragHa
         if (mainCam == null) mainCam = Camera.main;
         if (mainCam == null) return;
 
-        float zDepth = mainCam.WorldToScreenPoint(transform.position).z;
+        float zDepth = Mathf.Max(0.55f, mainCam.WorldToScreenPoint(transform.position).z);
         Vector3 screenPos = new Vector3(eventData.position.x, eventData.position.y, zDepth);
         transform.position = mainCam.ScreenToWorldPoint(screenPos);
     }
