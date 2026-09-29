@@ -1020,20 +1020,27 @@ public class FireSafetyManager : MonoBehaviour
     {
         extinguisherRoot = new GameObject("3D_CO2_Extinguisher");
         extinguisherRoot.transform.SetParent(transform, false);
-        extinguisherRoot.transform.localScale = Vector3.one * 1.45f;
+        // Keep the extinguisher compact so it does not cover the fire or the
+        // on-screen instruction, while retaining a recognisable silhouette.
+        extinguisherRoot.transform.localScale = Vector3.one * 0.85f;
 
         Shader solidShader = GetCompatibleSolidShader();
-        Material redMat = CreateSolidMaterial(solidShader, new Color(1.0f, 0.04f, 0.02f));
-        Material blackMat = CreateSolidMaterial(solidShader, new Color(0.15f, 0.15f, 0.16f));
-        Material brassMat = CreateSolidMaterial(solidShader, new Color(0.8f, 0.65f, 0.25f));
+        Material redMat = CreateSolidMaterial(solidShader, new Color(0.92f, 0.025f, 0.015f));
+        Material blackMat = CreateSolidMaterial(solidShader, new Color(0.08f, 0.08f, 0.09f));
+        Material brassMat = CreateSolidMaterial(solidShader, new Color(0.85f, 0.62f, 0.18f));
+        Material labelMat = CreateSolidMaterial(solidShader, new Color(0.96f, 0.96f, 0.90f));
 
         CreateSubCylinder(extinguisherRoot.transform, Vector3.zero, new Vector3(0.18f, 0.36f, 0.18f), redMat, Vector3.zero);
+        // High-contrast band and front label make the object read clearly as a
+        // fire extinguisher even when it is displayed small on a phone.
+        CreateSubCylinder(extinguisherRoot.transform, new Vector3(0, 0.08f, 0), new Vector3(0.184f, 0.025f, 0.184f), labelMat, Vector3.zero);
+        CreateSubCube(extinguisherRoot.transform, new Vector3(0, 0.08f, -0.185f), new Vector3(0.13f, 0.13f, 0.008f), labelMat);
         CreateSubCylinder(extinguisherRoot.transform, new Vector3(0, 0.38f, 0), new Vector3(0.065f, 0.05f, 0.065f), brassMat, Vector3.zero);
         CreateSubCube(extinguisherRoot.transform, new Vector3(0, 0.45f, -0.05f), new Vector3(0.026f, 0.1f, 0.15f), blackMat);
         CreateSubCylinder(extinguisherRoot.transform, new Vector3(0.1f, 0.23f, 0.15f), new Vector3(0.078f, 0.19f, 0.078f), blackMat, new Vector3(45f, 0, 0));
 
         var col = extinguisherRoot.AddComponent<BoxCollider>();
-        col.size = new Vector3(0.52f, 0.95f, 0.52f);
+        col.size = new Vector3(0.40f, 0.72f, 0.40f);
         extinguisherDraggable = extinguisherRoot.AddComponent<Draggable3DExtinguisher>();
 
         Material pMat = new Material(Shader.Find("Sprites/Default")) { mainTexture = GenerateSoftCircleTexture(64) };
@@ -1072,6 +1079,10 @@ public class FireSafetyManager : MonoBehaviour
         GameObject canvasObj = new GameObject("Simulation_Canvas");
         uiCanvas = canvasObj.AddComponent<Canvas>();
         uiCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        // Keep all instructions above the 3D fire/extinguisher visuals. The banner
+        // is also positioned beside the question card rather than at the screen edge.
+        uiCanvas.overrideSorting = true;
+        uiCanvas.sortingOrder = 100;
         CanvasScaler scaler = canvasObj.AddComponent<CanvasScaler>();
         scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
         // Tuned for portrait phones. Without this, the default 800x600
@@ -1087,22 +1098,25 @@ public class FireSafetyManager : MonoBehaviour
 
         Font defaultFont = GetUniversalFont();
 
-        // Top Banner
-        GameObject bannerObj = new GameObject("TopBanner");
+        // Instruction Banner: directly above the question card, with a deliberate
+        // gap so it remains readable without touching the card or the fire visuals.
+        GameObject bannerObj = new GameObject("InstructionBanner");
         bannerObj.transform.SetParent(canvasObj.transform, false);
         bannerBg = bannerObj.AddComponent<Image>();
-        bannerBg.color = new Color(0.85f, 0.2f, 0.2f);
+        bannerBg.color = new Color(0.055f, 0.07f, 0.10f, 0.98f);
+        bannerBg.raycastTarget = false;
         RectTransform bannerRT = bannerObj.GetComponent<RectTransform>();
-        bannerRT.anchorMin = new Vector2(0f, 1f);
-        bannerRT.anchorMax = new Vector2(1f, 1f);
-        bannerRT.pivot = new Vector2(0.5f, 1f);
-        bannerRT.sizeDelta = new Vector2(0, 120f);
+        bannerRT.anchorMin = new Vector2(0.5f, 0.5f);
+        bannerRT.anchorMax = new Vector2(0.5f, 0.5f);
+        bannerRT.pivot = new Vector2(0.5f, 0f);
+        bannerRT.anchoredPosition = new Vector2(0f, 445f); // 35 px above the card top
+        bannerRT.sizeDelta = new Vector2(760f, 105f);
 
         GameObject bannerTextObj = new GameObject("BannerText");
         bannerTextObj.transform.SetParent(bannerObj.transform, false);
         bannerText = bannerTextObj.AddComponent<Text>();
         bannerText.font = defaultFont;
-        bannerText.fontSize = 42;
+        bannerText.fontSize = 36;
         bannerText.fontStyle = FontStyle.Bold;
         bannerText.alignment = TextAnchor.MiddleCenter;
         bannerText.color = Color.white;
@@ -1478,7 +1492,8 @@ public class FireSafetyManager : MonoBehaviour
         var rend = child.GetComponent<ParticleSystemRenderer>();
         rend.material = mat;
         rend.renderMode = ParticleSystemRenderMode.Billboard;
-        rend.sortingOrder = 5;
+        // Keep world-space fire particles behind the dedicated screen-space UI.
+        rend.sortingOrder = -10;
 
         return ps;
     }
